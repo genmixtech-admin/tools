@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.2.1 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.2.2 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -44,6 +44,8 @@ section.info{border-top:3px solid var(--accent)}
 .field{display:grid;gap:4px;min-width:0}
 .field label{font-size:12px;color:var(--muted);font-weight:500}
 .field.wide{grid-column:span 2}
+input[type=datetime-local]{min-width:15em}
+@media (max-width:480px){.field.wide{grid-column:1/-1}}
 input,select,textarea{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);min-width:0}
 input.num{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
 input[readonly]{background:var(--sunk)}
@@ -111,7 +113,7 @@ textarea{font:12px var(--f-mono)}
     <div class="panel-head"><h2 id="formTitle">사용 내역 입력</h2></div>
     <div id="form" class="form">
       <div class="group">사용 정보</div>
-      <div class="field"><label for="f-date">사용일시</label><input type="datetime-local" id="f-date"></div>
+      <div class="field wide"><label for="f-date">사용일시</label><input type="datetime-local" id="f-date"></div>
       <div class="field"><label for="f-owner">소유주</label><input id="f-owner" list="ownerList" placeholder="홍길동"><datalist id="ownerList"></datalist></div>
       <div class="field"><label for="f-cat">구분</label><select id="f-cat"><option>해외교통</option><option>국내교통</option><option>통신</option><option>항공</option><option>숙박</option><option>식음료</option><option>기타</option></select></div>
       <div class="field wide"><label for="f-shop">상호 (사용처)</label><input id="f-shop" list="shopList" placeholder="예: Hilton London Metropole"><datalist id="shopList"></datalist></div>
