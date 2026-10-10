@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.7 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.8 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -158,12 +158,14 @@ textarea{font:12px var(--f-mono)}
           <option>USD</option><option>EUR</option><option>JPY</option><option>CNY</option><option>VND</option><option>THB</option><option>GBP</option><option>SGD</option><option>HKD</option><option>TWD</option><option>AUD</option><option>KRW</option>
         </select></div>
       <div class="field"><label for="f-local">현지화액</label><input id="f-local" class="num" inputmode="decimal" placeholder="0.00"></div>
-      <div class="field"><label for="f-rate" id="rateLbl">적용환율</label><input id="f-rate" class="num" inputmode="decimal" placeholder="1,380.50"></div>
-      <div class="field"><label for="f-base">환산액 (원)</label><input id="f-base" class="num" readonly placeholder="자동 계산"></div>
-      <div class="field"><label for="f-fee">환수수료 (원)</label><input id="f-fee" class="num" inputmode="numeric" placeholder="0"></div>
-      <div class="field"><label for="f-krw">원화액 합계 (원)</label><input id="f-krw" class="num" inputmode="numeric" placeholder="0"></div>
+      <div class="field fxu"><label for="f-fx1" id="fx1Lbl">환율 (1 현지화 = ? USD)</label><input id="f-fx1" class="num" inputmode="decimal" placeholder="예: 1.2712"></div>
+      <div class="field fxu"><label for="f-usd">USD 환산액</label><input id="f-usd" class="num" inputmode="decimal" placeholder="현지화액 입력 후" disabled></div>
+      <div class="field fxu"><label for="f-fx2">환율 (1 USD = ? 원)</label><input id="f-fx2" class="num" inputmode="decimal" placeholder="예: 1,385.20"></div>
+      <div class="field"><label for="f-base">원화 환산액 (원)</label><input id="f-base" class="num" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label for="f-fee">환가료 (원)</label><input id="f-fee" class="num" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label for="f-krw">원화 합계 (원)</label><input id="f-krw" class="num" readonly placeholder="자동 계산"></div>
       <div class="field wide"><label for="f-memo">내역 (선택)</label><input id="f-memo" placeholder="예: 거래처 미팅 저녁"></div>
-      <p class="hint">원화액 합계 = 현지화액 × 환율 + 환수수료. 환율을 모르면 카드 청구서의 원화 금액을 '원화액 합계'에 직접 입력하세요. 엔화(JPY)는 100엔당 환율입니다.</p>
+      <p class="hint">계산 순서: 현지화액 × (현지화→USD 환율) = USD 환산액 → USD × (USD→원 환율) = 원화 환산액 → 원화 환산액 + 환가료 = 원화 합계.<br>USD 결제는 현지화→USD 환율이 1로 자동 입력됩니다. 'USD→원 환율'과 '원화 환산액'은 둘 중 하나만 입력하면 나머지가 계산됩니다. 카드 청구서의 USD 금액을 직접 입력해도 환율이 자동으로 계산됩니다. 원화(KRW) 결제는 현지화액이 그대로 원화 환산액이 됩니다.</p>
       <p class="err" id="formErr" hidden></p>
       <div class="form-actions">
         <button type="button" class="btn" id="cancelEdit" hidden>수정 취소</button>
@@ -189,7 +191,7 @@ textarea{font:12px var(--f-mono)}
     </div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th class="sel"><input type="checkbox" id="chkAll" aria-label="전체 선택"></th><th>관리</th><th>사용일시</th><th>이름</th><th>개인/법인</th><th>결제</th><th>카드</th><th>구분</th><th>상호</th><th>교통 상세</th><th class="n">현지화액</th><th>통화</th><th class="n">환율</th><th class="n">환산액</th><th class="n">수수료</th><th class="n">원화액</th><th>내역</th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="chkAll" aria-label="전체 선택"></th><th>관리</th><th>사용일시</th><th>이름</th><th>개인/법인</th><th>결제</th><th>카드</th><th>구분</th><th>상호</th><th>교통 상세</th><th class="n">현지화액</th><th>통화</th><th class="n">현지화→USD</th><th class="n">USD</th><th class="n">원/USD</th><th class="n">원화 환산</th><th class="n">환가료</th><th class="n">원화 합계</th><th>내역</th></tr></thead>
         <tbody id="rows"></tbody>
         <tfoot id="foot"></tfoot>
       </table>
@@ -282,37 +284,63 @@ function methodVal(){return document.querySelector('input[name=method]:checked')
 function kindVal(){return document.querySelector('input[name=kind]:checked').value}
 function syncMethod(){const cash=methodVal()==='현금';$('#f-card').disabled=cash;if(cash)$('#f-card').value=''}
 function syncCat(){const t=isTrans($('#f-cat').value);['#t-mode-f','#t-from-f','#t-to-f'].forEach(s=>$(s).hidden=!t)}
-function syncCur(){const c=$('#f-cur').value;$('#rateLbl').textContent=c==='JPY'?'적용환율 (100엔당)':'적용환율';$('#f-rate').disabled=c==='KRW';if(c==='KRW')$('#f-rate').value=''}
+function syncCur(){
+  const c=$('#f-cur').value, krw=c==='KRW', usd=c==='USD';
+  document.querySelectorAll('.fxu').forEach(el=>el.hidden=krw);
+  $('#fx1Lbl').textContent=`환율 (1 ${c} = ? USD)`;
+  if(krw){['#f-fx1','#f-usd','#f-fx2'].forEach(x=>$(x).value='')}
+  $('#f-fx1').readOnly=usd; if(usd)$('#f-fx1').value='1';
+  $('#f-base').readOnly=krw;
+  syncUsdEnabled();
+}
+function syncUsdEnabled(){const c=$('#f-cur').value;$('#f-usd').disabled=!isFinite(num($('#f-local').value))||c==='KRW';$('#f-usd').readOnly=c==='USD'}
 document.querySelectorAll('input[name=method]').forEach(r=>r.addEventListener('change',syncMethod));
 $('#f-cat').addEventListener('change',syncCat);
 
-function calcBase(){
+/* 금액 흐름: 현지화액 → (현지화→USD 환율) → USD → (USD→원 환율 ⇄ 원화 환산액) → + 환가료 = 원화 합계 */
+const r2=v=>Math.round(v*100)/100, r6=v=>Math.round(v*1e6)/1e6;
+const fmtUSD=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtFx=v=>Number(v).toLocaleString('en-US',{maximumFractionDigits:6});
+let lastKrwInput='fx2'; // 원화 단계에서 마지막으로 직접 입력한 칸: 'fx2' 또는 'base'
+function setVal(sel,v,fmt){$(sel).value=isFinite(v)?fmt(v):''}
+function calcTotal(){const b=num($('#f-base').value),fee=num($('#f-fee').value)||0;$('#f-krw').value=isFinite(b)?Math.round(b+fee).toLocaleString('ko-KR'):''}
+function calcKrw(){
+  const usd=num($('#f-usd').value);
+  if(isFinite(usd)){
+    if(lastKrwInput==='base'&&isFinite(num($('#f-base').value))){const b=num($('#f-base').value);if(usd)setVal('#f-fx2',r2(b/usd),fmtFx)}
+    else{const fx2=num($('#f-fx2').value);if(isFinite(fx2))setVal('#f-base',Math.round(usd*fx2),v=>v.toLocaleString('ko-KR'))}
+  }
+  calcTotal();
+}
+function calcUsd(){
   const c=$('#f-cur').value,l=num($('#f-local').value);
-  if(!isFinite(l))return NaN;
-  if(c==='KRW')return Math.round(l);
-  const r=num($('#f-rate').value);
-  return isFinite(r)?Math.round(l*r/perOf(c)):NaN;
+  if(c==='KRW'){setVal('#f-base',Math.round(l),v=>v.toLocaleString('ko-KR'));calcTotal();return}
+  if(c==='USD')$('#f-fx1').value='1';
+  const fx1=num($('#f-fx1').value);
+  if(isFinite(l)&&isFinite(fx1))setVal('#f-usd',r2(l*fx1),fmtUSD);
+  calcKrw();
 }
-function autoKRW(){
-  const b=calcBase(),fee=num($('#f-fee').value)||0;
-  $('#f-base').value=isFinite(b)?b.toLocaleString('ko-KR'):'';
-  if(isFinite(b))$('#f-krw').value=(b+fee).toLocaleString('ko-KR');
-}
-['#f-local','#f-rate','#f-fee'].forEach(s=>$(s).addEventListener('input',autoKRW));
-$('#f-cur').addEventListener('change',()=>{syncCur();autoKRW()});
+$('#f-local').addEventListener('input',()=>{syncUsdEnabled();calcUsd()});
+$('#f-fx1').addEventListener('input',calcUsd);
+$('#f-usd').addEventListener('input',()=>{const l=num($('#f-local').value),u=num($('#f-usd').value);if(isFinite(l)&&l&&isFinite(u)&&$('#f-cur').value!=='USD')setVal('#f-fx1',r6(u/l),fmtFx);calcKrw()});
+$('#f-fx2').addEventListener('input',()=>{lastKrwInput='fx2';calcKrw()});
+$('#f-base').addEventListener('input',()=>{lastKrwInput='base';calcKrw()});
+$('#f-fee').addEventListener('input',calcTotal);
+$('#f-cur').addEventListener('change',()=>{syncCur();calcUsd()});
 $('#f-card').addEventListener('input',e=>e.target.value=e.target.value.replace(/\D/g,'').slice(0,4));
 
 function doSubmit(){
   const err=$('#formErr'); err.hidden=true;
   const cat=$('#f-cat').value, t=isTrans(cat), cur=$('#f-cur').value;
-  const fee=Math.round(num($('#f-fee').value)||0), krw=Math.round(num($('#f-krw').value));
-  const rate=num($('#f-rate').value);
+  const fee=Math.round(num($('#f-fee').value)||0), base=Math.round(num($('#f-base').value));
+  const fx1=num($('#f-fx1').value), usd=num($('#f-usd').value), fx2=num($('#f-fx2').value), isK=cur==='KRW';
   const rec={
     date:getDT(), owner:$('#f-owner').value.trim(), method:methodVal(), kind:kindVal(),
     card4:methodVal()==='카드'?$('#f-card').value:'', cat, shop:$('#f-shop').value.trim(),
     tmode:t?$('#t-mode').value:'', tfrom:t?$('#t-from').value.trim():'', tto:t?$('#t-to').value.trim():'',
-    currency:cur, local:num($('#f-local').value), rate:(cur!=='KRW'&&isFinite(rate))?rate:null,
-    fee, krw, base:isFinite(krw)?krw-fee:NaN, memo:$('#f-memo').value.trim()
+    currency:cur, local:num($('#f-local').value),
+    fx1:!isK&&isFinite(fx1)?fx1:null, usd:!isK&&isFinite(usd)?r2(usd):null, fx2:!isK&&isFinite(fx2)?fx2:null, rate:null,
+    base, fee, krw:isFinite(base)?base+fee:NaN, memo:$('#f-memo').value.trim()
   };
   const miss=[];
   if(!rec.date)miss.push('사용일시'); if(!rec.owner)miss.push('이름');
@@ -320,7 +348,7 @@ function doSubmit(){
   // 교통수단은 새로 입력할 때만 필수 (v1.1 이전 내역 수정은 비워 둬도 저장)
   const legacy=editingId&&!(items.find(x=>x.id===editingId)||{}).tmode;
   if(t&&!rec.tmode&&!legacy)miss.push('교통수단');
-  if(!isFinite(rec.local))miss.push('현지화액'); if(!isFinite(rec.krw))miss.push('원화액 합계');
+  if(!isFinite(rec.local))miss.push('현지화액'); if(!isFinite(rec.base))miss.push('원화 환산액 (USD→원 환율 또는 원화 환산액 입력)');
   if(miss.length){const m=`${miss.join(', ')} 항목을 확인해 주세요.`;err.textContent=m;err.hidden=false;toast(m);err.scrollIntoView({behavior:'smooth',block:'center'});return}
   const wasEdit=!!editingId;
   upsert(rec); toast(wasEdit?'수정했습니다':'추가했습니다');
@@ -331,7 +359,8 @@ $('#submitBtn').addEventListener('click',doSubmit);
 $('#form').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();doSubmit()}});
 function resetForm(keep){
   editingId=null; $('#submitBtn').textContent='추가'; $('#cancelEdit').hidden=true;
-  ['#f-local','#f-base','#f-fee','#f-krw','#f-memo','#f-shop','#t-from','#t-to'].forEach(s=>$(s).value='');
+  ['#f-local','#f-fx1','#f-usd','#f-base','#f-fee','#f-krw','#f-memo','#f-shop','#t-from','#t-to'].forEach(s=>$(s).value='');
+  lastKrwInput='fx2';
   $('#t-mode').value='';
   if(!keep)setDT(nowLocal());
   syncMethod(); syncCat(); syncCur();
@@ -348,8 +377,9 @@ function startEdit(id,copy){
   $('#t-mode').value=r.tmode||''; $('#t-from').value=r.tfrom||''; $('#t-to').value=r.tto||'';
   $('#f-cur').value=r.currency; syncMethod(); syncCat(); syncCur();
   $('#f-card').value=r.card4||'';
-  $('#f-local').value=r.local; $('#f-rate').value=r.rate??''; $('#f-fee').value=r.fee||'';
-  $('#f-base').value=fmtKRW(r.base); $('#f-krw').value=fmtKRW(r.krw); $('#f-memo').value=r.memo||'';
+  $('#f-local').value=r.local; syncUsdEnabled();
+  $('#f-fx1').value=r.currency==='USD'?'1':(r.fx1!=null?fmtFx(r.fx1):''); $('#f-usd').value=r.usd!=null?fmtUSD(r.usd):''; $('#f-fx2').value=r.fx2!=null?fmtFx(r.fx2):'';
+  $('#f-base').value=fmtKRW(r.base); $('#f-fee').value=r.fee||''; lastKrwInput=r.fx2!=null?'fx2':'base'; calcTotal(); $('#f-memo').value=r.memo||'';
   $('#submitBtn').textContent=copy?'복사본 추가':'수정 저장'; $('#cancelEdit').textContent=copy?'복사 취소':'수정 취소'; $('#cancelEdit').hidden=false;
   if(copy)toast('내용을 복사했습니다. 날짜·금액 등을 고친 뒤 \'복사본 추가\'를 누르세요');
   $('#form').scrollIntoView({behavior:'smooth',block:'start'}); $('#f-date').focus({preventScroll:true});
@@ -403,12 +433,12 @@ function render(){
     <div><span class="lbl">총 원화액</span><span class="big">₩${fmtKRW(sum)}</span></div>
     <div><span class="lbl">법인</span><span class="big">₩${fmtKRW(corp)}</span></div>
     <div><span class="lbl">개인</span><span class="big">₩${fmtKRW(sum-corp)}</span></div>
-    <div><span class="lbl">환수수료 합계</span><span class="big">₩${fmtKRW(feeSum)}</span></div>
+    <div><span class="lbl">환가료 합계</span><span class="big">₩${fmtKRW(feeSum)}</span></div>
     <div><span class="lbl">건수</span><span class="big">${list.length}</span></div>`;
 
   const tb=$('#rows');
   if(!list.length){
-    tb.innerHTML=`<tr><td colspan="17" class="empty">${items.length?'조건에 맞는 내역이 없습니다.':'아직 입력된 내역이 없습니다. 위 양식에서 첫 사용 내역을 추가해 보세요.'}</td></tr>`;
+    tb.innerHTML=`<tr><td colspan="19" class="empty">${items.length?'조건에 맞는 내역이 없습니다.':'아직 입력된 내역이 없습니다. 위 양식에서 첫 사용 내역을 추가해 보세요.'}</td></tr>`;
     $('#foot').innerHTML='';
   }else{
     tb.innerHTML=list.map(r=>`<tr${selected.has(r.id)?' class="on"':''}>
@@ -421,10 +451,10 @@ function render(){
       <td>${esc(r.method)}</td><td class="mono">${r.card4?'**** '+esc(r.card4):'—'}</td>
       <td>${esc(r.cat||'기타')}</td><td class="wr">${esc(r.shop||'')}</td><td class="small wr">${esc(transStr(r))}</td>
       <td class="n">${fmtLocal(r.local,r.currency)}</td><td class="mono">${esc(r.currency)}</td>
-      <td class="n">${r.rate!=null?Number(r.rate).toLocaleString('ko-KR',{maximumFractionDigits:4}):''}</td>
+      <td class="n">${r.fx1!=null?fmtFx(r.fx1):''}</td><td class="n">${r.usd!=null?fmtUSD(r.usd):''}</td><td class="n">${r.fx2!=null?fmtFx(r.fx2):(r.rate!=null?'<span class="small" title="이전 방식: 현지화→원 직접 환율">'+fmtFx(r.rate)+'*</span>':'')}</td>
       <td class="n">${fmtKRW(r.base)}</td><td class="n">${r.fee?fmtKRW(r.fee):''}</td>
       <td class="n"><b>${fmtKRW(r.krw)}</b></td><td class="memo wr" title="${esc(r.memo)}">${esc(r.memo)||''}</td></tr>`).join('');
-    $('#foot').innerHTML=`<tr><td colspan="13">합계</td><td class="n">${fmtKRW(baseSum)}</td><td class="n">${fmtKRW(feeSum)}</td><td class="n">${fmtKRW(sum)}</td><td></td></tr>`;
+    $('#foot').innerHTML=`<tr><td colspan="13">합계</td><td class="n">${fmtUSD(list.reduce((s,r)=>s+(r.usd||0),0))}</td><td></td><td class="n">${fmtKRW(baseSum)}</td><td class="n">${fmtKRW(feeSum)}</td><td class="n">${fmtKRW(sum)}</td><td></td></tr>`;
   }
 
   const max=Math.max(1,...ag.owners.map(o=>o.total));
@@ -465,8 +495,8 @@ $('#rows').addEventListener('click',e=>{
 });
 
 /* ---------- 내보내기 ---------- */
-const HEAD=['사용일시','이름','개인/법인','현금/카드','카드번호(끝4자리)','구분','상호','교통수단','출발지','목적지','통화','현지화액','적용환율','환산액(원)','환수수료(원)','원화액 합계(원)','내역'];
-const rowOf=r=>[fmtDT(r.date),r.owner,r.kind,r.method,r.card4||'',r.cat||'기타',r.shop||'',r.tmode||'',r.tfrom||'',r.tto||'',r.currency,r.local,r.rate??'',r.base,r.fee||0,r.krw,r.memo||''];
+const HEAD=['사용일시','이름','개인/법인','현금/카드','카드번호(끝4자리)','구분','상호','교통수단','출발지','목적지','통화','현지화액','환율(현지화→USD)','USD 환산액','환율(USD→원)','원화 환산액(원)','환가료(원)','원화 합계(원)','내역'];
+const rowOf=r=>[fmtDT(r.date),r.owner,r.kind,r.method,r.card4||'',r.cat||'기타',r.shop||'',r.tmode||'',r.tfrom||'',r.tto||'',r.currency,r.local,r.fx1??'',r.usd??'',r.fx2??'',r.base,r.fee||0,r.krw,r.memo||''];
 const periodStr=()=>info.from||info.to?`${info.from||''} ~ ${info.to||''}`:'';
 const infoRows=()=>[['출장명',info.name||''],['출장자',info.person||''],['출장기간',periodStr()]];
 
@@ -479,16 +509,17 @@ function buildWb(){
   list.forEach((r,i)=>{
     const row=first+i, v=rowOf(r);
     // 환산액: 환율로 계산된 값이면 수식, 아니면 입력값
-    const per=perOf(r.currency);
-    if(r.currency==='KRW'&&Math.round(r.local)===r.base) v[13]={t:'n',f:`ROUND(L${row},0)`};
-    else if(r.rate!=null&&Math.round(r.local*r.rate/per)===r.base) v[13]={t:'n',f:`ROUND(L${row}*M${row}/${per},0)`};
-    v[15]={t:'n',f:`N${row}+O${row}`};
+    // 계산 값과 일치할 때만 수식으로 (직접 입력한 값은 그대로)
+    if(r.fx1!=null&&r.usd!=null&&r2(r.local*r.fx1)===r.usd) v[13]={t:'n',f:`ROUND(L${row}*M${row},2)`};
+    if(r.currency==='KRW'&&Math.round(r.local)===r.base) v[15]={t:'n',f:`ROUND(L${row},0)`};
+    else if(r.usd!=null&&r.fx2!=null&&Math.round(r.usd*r.fx2)===r.base) v[15]={t:'n',f:`ROUND(N${row}*O${row},0)`};
+    v[17]={t:'n',f:`P${row}+Q${row}`};
     XLSX.utils.sheet_add_aoa(ws1,[v],{origin:`A${row}`});
   });
-  XLSX.utils.sheet_add_aoa(ws1,[['합계','','','','','','','','','','','','',{t:'n',f:`SUM(N${first}:N${last})`},{t:'n',f:`SUM(O${first}:O${last})`},{t:'n',f:`SUM(P${first}:P${last})`},'']],{origin:`A${last+1}`});
-  ws1['!cols']=[17,10,9,9,14,9,22,9,16,16,6,12,10,12,12,14,24].map(w=>({wch:w}));
+  XLSX.utils.sheet_add_aoa(ws1,[['합계','','','','','','','','','','','','',{t:'n',f:`SUM(N${first}:N${last})`},'',{t:'n',f:`SUM(P${first}:P${last})`},{t:'n',f:`SUM(Q${first}:Q${last})`},{t:'n',f:`SUM(R${first}:R${last})`},'']],{origin:`A${last+1}`});
+  ws1['!cols']=[17,10,9,9,14,9,22,9,16,16,6,12,12,12,12,14,12,14,24].map(w=>({wch:w}));
   ws1['!merges']=[0,1,2].map(r=>({s:{r,c:1},e:{r,c:6}}));
-  for(let i=first;i<=last+1;i++){[['L','#,##0.00'],['M','#,##0.####'],['N','#,##0'],['O','#,##0'],['P','#,##0']].forEach(([c,z])=>{const cell=ws1[c+i];if(cell)cell.z=z})}
+  for(let i=first;i<=last+1;i++){[['L','#,##0.00'],['M','0.0000##'],['N','#,##0.00'],['O','#,##0.00'],['P','#,##0'],['Q','#,##0'],['R','#,##0']].forEach(([c,z])=>{const cell=ws1[c+i];if(cell)cell.z=z})}
   XLSX.utils.book_append_sheet(wb,ws1,'정산내역');
 
   const ws2=XLSX.utils.aoa_to_sheet([...infoRows(),[],['이름','건수','법인(원)','개인(원)','합계(원)'],...ag.owners.map(o=>[o.owner,o.n,o.corp,o.pers,o.total]),
@@ -535,7 +566,7 @@ $('#mailBtn').addEventListener('click',async()=>{
   const body=['안녕하세요.','','출장비 정산 내역을 첨부와 같이 보내드립니다.','',
     `- 출장명: ${info.name||''}`,`- 출장자: ${who}`,`- 출장기간: ${period}`,
     `- 총 원화액: ${fmtKRW(sum)}원 (법인 ${fmtKRW(corp)}원 / 개인 ${fmtKRW(sum-corp)}원)`,
-    `- 환수수료 합계: ${fmtKRW(fee)}원`,`- 건수: ${list.length}건`,'',
+    `- 환가료 합계: ${fmtKRW(fee)}원`,`- 건수: ${list.length}건`,'',
     `첨부: ${r.fname}`,'','감사합니다.','','※ 출장비 정산 시스템에서 genmixtech.ai@gmail.com 계정으로 자동 발송된 메일입니다. 회신은 참조(CC)된 출장자에게 전달됩니다.'].join('\n');
   const btn=$('#mailBtn'), label=btn.textContent; sending=true; btn.disabled=true; btn.textContent='발송 중…';
   try{
