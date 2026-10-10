@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.3.2 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.4 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -100,10 +100,12 @@ textarea{font:12px var(--f-mono)}
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span class="status" id="syncStatus">불러오는 중…</span>
       <button class="btn" id="copyBtn" type="button">표 복사</button>
-      <button class="btn primary" id="exportBtn" type="button">엑셀 내보내기</button>
+      <button class="btn" id="exportBtn" type="button">엑셀 내보내기</button>
+      <button class="btn primary" id="mailBtn" type="button">엑셀 받고 메일 쓰기</button>
     </div>
   </header>
 
+  <section class="panel" id="mailHint" hidden style="border-left:4px solid var(--accent)"><div class="panel-head"><h2>메일에 엑셀 파일을 첨부해 주세요</h2><button class="btn ghost" type="button" onclick="this.closest('section').hidden=true">닫기</button></div><p class="hint" style="font-size:13px">메일 작성 창이 열렸습니다. 방금 내려받은 <b id="mailFile"></b> 파일(보통 '다운로드' 폴더)을 메일 창에 끌어다 놓은 뒤 보내기를 누르세요. 웹페이지는 보안상 파일을 메일에 자동으로 첨부할 수 없습니다. 메일 창이 열리지 않으면 기본 메일 프로그램(Outlook 등)이 설정되어 있는지 확인해 주세요.</p></section>
   <section class="panel" id="copyPanel" hidden><div class="panel-head"><h2>표 복사</h2><button class="btn ghost" id="copyClose" type="button">닫기</button></div><p class="hint">아래 내용이 선택되어 있습니다. Ctrl+C(Mac은 ⌘+C)로 복사한 뒤 엑셀 A1 칸에 붙여넣으세요.</p><textarea id="copyText" rows="6" readonly></textarea></section>
 
   <section class="panel info" aria-labelledby="infoTitle">
@@ -113,6 +115,9 @@ textarea{font:12px var(--f-mono)}
       <div class="field"><label for="i-person">출장자</label><input id="i-person" placeholder="홍길동"></div>
       <div class="field"><label for="i-from">출장기간 (시작)</label><input type="date" id="i-from"></div>
       <div class="field"><label for="i-to">출장기간 (종료)</label><input type="date" id="i-to"></div>
+      <div class="field wide"><label for="i-mailto">받는 사람 (정산 담당자 이메일)</label><input id="i-mailto" type="text" inputmode="email" placeholder="예: account@genmixtech.com, manager@genmixtech.com"></div>
+      <div class="field wide"><label for="i-mailcc">참조 (CC, 선택)</label><input id="i-mailcc" type="text" inputmode="email" placeholder="예: 본인 이메일"></div>
+      <p class="hint">이메일은 여러 개를 쉼표(,)나 세미콜론(;)으로 구분해 입력하세요. 입력한 주소는 이 브라우저에 저장되어 다음에도 그대로 쓰입니다.</p>
     </div>
   </section>
 
@@ -215,7 +220,7 @@ const perOf=c=>c==='JPY'?100:1;
 const fmtDT=d=>String(d||'').replace('T',' ');
 const dayOf=d=>String(d||'').slice(0,10);
 
-let items=[], info={name:'',person:'',from:'',to:''};
+let items=[], info={name:'',person:'',from:'',to:'',mailto:'',mailcc:''};
 let editingId=null, pendingDelete=null; const selected=new Set();
 const LS='travel-expense-local', LSI='travel-expense-info';
 
@@ -231,7 +236,7 @@ function normalize(r){
 }
 
 /* ---------- 출장 기본정보 ---------- */
-const infoMap={name:'#i-name',person:'#i-person',from:'#i-from',to:'#i-to'};
+const infoMap={name:'#i-name',person:'#i-person',from:'#i-from',to:'#i-to',mailto:'#i-mailto',mailcc:'#i-mailcc'};
 function renderInfo(){for(const k in infoMap)$(infoMap[k]).value=info[k]||'';updateTitle()}
 function updateTitle(){$('#pageTitle').textContent=info.name?`출장비 정산 · ${info.name}`:'출장비 정산'}
 for(const k in infoMap){
@@ -439,9 +444,9 @@ const rowOf=r=>[fmtDT(r.date),r.owner,r.kind,r.method,r.card4||'',r.cat||'기타
 const periodStr=()=>info.from||info.to?`${info.from||''} ~ ${info.to||''}`:'';
 const infoRows=()=>[['출장명',info.name||''],['출장자',info.person||''],['출장기간',periodStr()]];
 
-$('#exportBtn').addEventListener('click',()=>{
-  if(typeof XLSX==='undefined'){toast('엑셀 모듈을 불러오지 못했습니다. \'표 복사\'를 이용하세요');return}
-  const list=filtered(); if(!list.length){toast('내보낼 내역이 없습니다');return}
+function exportXlsx(){
+  if(typeof XLSX==='undefined'){toast('엑셀 모듈을 불러오지 못했습니다. \'표 복사\'를 이용하세요');return null}
+  const list=filtered(); if(!list.length){toast('내보낼 내역이 없습니다');return null}
   const ag=aggregate(list), wb=XLSX.utils.book_new();
   const HR=5, first=HR+1, n=list.length, last=HR+n; // 머리글 5행, 데이터 6행부터
   const ws1=XLSX.utils.aoa_to_sheet([...infoRows(),[],HEAD]);
@@ -473,7 +478,30 @@ $('#exportBtn').addEventListener('click',()=>{
   const safe=s=>String(s||'').replace(/[\\/:*?"<>|]/g,'').trim().slice(0,40);
   const d=new Date(),ymd=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
   const fname=['출장비정산',safe(info.name),safe(info.person),ymd].filter(Boolean).join('_')+'.xlsx';
-  try{XLSX.writeFile(wb,fname);toast('엑셀 파일을 내려받았습니다')}catch(x){toast('파일 저장이 막혀 있습니다. \'표 복사\'를 이용하세요')}
+  try{XLSX.writeFile(wb,fname);toast('엑셀 파일을 내려받았습니다');return fname}catch(x){toast('파일 저장이 막혀 있습니다. \'표 복사\'를 이용하세요');return null}
+}
+$('#exportBtn').addEventListener('click',()=>exportXlsx());
+
+/* ---------- 메일 쓰기 ---------- */
+const parseMails=s=>String(s||'').split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean);
+const okMail=m=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m);
+$('#mailBtn').addEventListener('click',()=>{
+  const to=parseMails(info.mailto), cc=parseMails(info.mailcc), bad=[...to,...cc].filter(m=>!okMail(m));
+  if(!to.length){toast('출장 기본정보에 받는 사람 이메일을 입력해 주세요');$('#i-mailto').focus();$('#i-mailto').scrollIntoView({behavior:'smooth',block:'center'});return}
+  if(bad.length){toast(`이메일 형식을 확인해 주세요: ${bad.join(', ')}`);$('#i-mailto').focus();return}
+  const fname=exportXlsx(); if(!fname)return;
+  const list=filtered(), sum=list.reduce((s,r)=>s+r.krw,0), corp=list.filter(r=>r.kind==='법인').reduce((s,r)=>s+r.krw,0), fee=list.reduce((s,r)=>s+(r.fee||0),0);
+  const period=periodStr(), who=info.person||'';
+  const subject=`[출장비 정산] ${info.name||'출장'}${who?' - '+who:''}${period?` (${period})`:''}`;
+  const body=[ '안녕하세요.', '', '출장비 정산 내역을 보내드립니다.', '',
+    `- 출장명: ${info.name||''}`, `- 출장자: ${who}`, `- 출장기간: ${period}`,
+    `- 총 원화액: ${fmtKRW(sum)}원 (법인 ${fmtKRW(corp)}원 / 개인 ${fmtKRW(sum-corp)}원)`,
+    `- 환수수료 합계: ${fmtKRW(fee)}원`, `- 건수: ${list.length}건`, '',
+    `첨부: ${fname}`, '', '감사합니다.'].join('\r\n');
+  let url=`mailto:${to.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if(cc.length)url+=`&cc=${cc.join(',')}`;
+  setTimeout(()=>{location.href=url},400);
+  $('#mailHint').hidden=false; $('#mailFile').textContent=fname;
 });
 
 $('#copyBtn').addEventListener('click',async()=>{
