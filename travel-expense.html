@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.5 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.6 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -84,7 +84,10 @@ tfoot td{font-weight:700;background:var(--sunk);border-bottom:0}
 th.sel,td.sel{width:36px;text-align:center;padding-left:6px;padding-right:6px}
 td.sel input,th.sel input{width:16px;height:16px;cursor:pointer}
 tr.on{background:var(--accent-soft)}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}
+#byCat tr.sub td{color:var(--muted);font-size:12px}
+#byCat tr.sub td:first-child{padding-left:22px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:20px;align-items:start}
+.stats section.panel{align-content:start}
 .bar{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--accent)}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:10;max-width:calc(100% - 32px)}
@@ -194,6 +197,10 @@ textarea{font:12px var(--f-mono)}
   </section>
 
   <div class="stats">
+    <section class="panel" aria-labelledby="byCatTitle">
+      <h2 id="byCatTitle">구분별 소계</h2>
+      <div class="tbl-wrap"><table><thead><tr><th>구분</th><th class="n">건수</th><th class="n">법인</th><th class="n">개인</th><th class="n">합계 (원)</th><th class="n">비중</th><th></th></tr></thead><tbody id="byCat"></tbody></table></div>
+    </section>
     <section class="panel" aria-labelledby="byOwnerTitle">
       <h2 id="byOwnerTitle">개인별 소계</h2>
       <div class="tbl-wrap"><table><thead><tr><th>이름</th><th class="n">건수</th><th class="n">법인</th><th class="n">개인</th><th class="n">합계 (원)</th><th></th></tr></thead><tbody id="byOwner"></tbody></table></div>
@@ -353,6 +360,17 @@ function filtered(){
   return items.filter(r=>(!o||r.owner===o)&&(!k||r.kind===k)&&(!g||(r.cat||'기타')===g)&&(!f||dayOf(r.date)>=f)&&(!t||dayOf(r.date)<=t))
     .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
 }
+const CATS=['해외교통','국내교통','통신','항공','숙박','식음료','기타'];
+function aggregateCat(list){
+  const m=new Map();
+  for(const r of list){
+    const k=r.cat||'기타', c=m.get(k)||{cat:k,n:0,corp:0,pers:0,total:0,subs:new Map()};
+    c.n++; c.total+=r.krw; if(r.kind==='법인')c.corp+=r.krw; else c.pers+=r.krw;
+    if(isTrans(k)){const sk=r.tmode||'미입력',sc=c.subs.get(sk)||{cat:sk,n:0,corp:0,pers:0,total:0};sc.n++;sc.total+=r.krw;if(r.kind==='법인')sc.corp+=r.krw;else sc.pers+=r.krw;c.subs.set(sk,sc)}
+    m.set(k,c);
+  }
+  return CATS.filter(k=>m.has(k)).map(k=>m.get(k)).concat([...m.keys()].filter(k=>!CATS.includes(k)).map(k=>m.get(k)));
+}
 function aggregate(list){
   const owners=new Map(), cards=new Map();
   for(const r of list){
@@ -414,6 +432,11 @@ function render(){
   $('#byCard').innerHTML=ag.cards.length?ag.cards.map(c=>`<tr><td class="mono">${esc(c.card)}</td><td>${esc(c.owner)}</td><td>${c.kind==='현금'?'현금':`<span class="pill ${c.kind==='법인'?'corp':'pers'}">${c.kind}</span>`}</td><td class="n">${c.n}</td><td class="mono" style="font-size:12px">${esc(localStr(c.local))}</td><td class="n"><b>${fmtKRW(c.total)}</b></td></tr>`).join('')
     +`<tr><td colspan="3"><b>합계</b></td><td class="n"><b>${list.length}</b></td><td></td><td class="n"><b>${fmtKRW(sum)}</b></td></tr>`
     :`<tr><td colspan="6" class="empty">내역이 추가되면 표시됩니다.</td></tr>`;
+  const cats=aggregateCat(list), cmax=Math.max(1,...cats.map(c=>c.total)), pct=v=>sum?(v/sum*100).toFixed(1)+'%':'-';
+  $('#byCat').innerHTML=cats.length?cats.map(c=>`<tr><td><b>${esc(c.cat)}</b></td><td class="n">${c.n}</td><td class="n">${fmtKRW(c.corp)}</td><td class="n">${fmtKRW(c.pers)}</td><td class="n"><b>${fmtKRW(c.total)}</b></td><td class="n">${pct(c.total)}</td><td><div class="bar"><i style="width:${(c.total/cmax*100).toFixed(1)}%"></i></div></td></tr>`
+      +[...c.subs.values()].map(x=>`<tr class="sub"><td>└ ${esc(x.cat)}</td><td class="n">${x.n}</td><td class="n">${fmtKRW(x.corp)}</td><td class="n">${fmtKRW(x.pers)}</td><td class="n">${fmtKRW(x.total)}</td><td class="n">${pct(x.total)}</td><td></td></tr>`).join('')).join('')
+    +`<tr><td><b>합계</b></td><td class="n"><b>${list.length}</b></td><td class="n"><b>${fmtKRW(corp)}</b></td><td class="n"><b>${fmtKRW(sum-corp)}</b></td><td class="n"><b>${fmtKRW(sum)}</b></td><td class="n">100%</td><td></td></tr>`
+    :`<tr><td colspan="7" class="empty">내역이 추가되면 표시됩니다.</td></tr>`;
   syncSel(list);
 }
 /* ---------- 선택 & 일괄 삭제 ---------- */
@@ -473,6 +496,13 @@ function buildWb(){
     ['합계','','',n,'',ag.cards.reduce((s,c)=>s+c.total,0)]]);
   ws3['!cols']=[12,12,8,8,28,14].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb,ws3,'카드별 소계');
+  const cats=aggregateCat(list), tot=cats.reduce((s,c)=>s+c.total,0);
+  const catRows=[]; cats.forEach(c=>{catRows.push([c.cat,'',c.n,c.corp,c.pers,c.total,tot?c.total/tot:0]);[...c.subs.values()].forEach(x=>catRows.push(['',x.cat,x.n,x.corp,x.pers,x.total,tot?x.total/tot:0]))});
+  const ws4=XLSX.utils.aoa_to_sheet([...infoRows(),[],['구분','교통수단','건수','법인(원)','개인(원)','합계(원)','비중'],...catRows,
+    ['합계','',n,cats.reduce((s,c)=>s+c.corp,0),cats.reduce((s,c)=>s+c.pers,0),tot,tot?1:0]]);
+  ws4['!cols']=[12,12,8,14,14,14,8].map(w=>({wch:w}));
+  {const r=XLSX.utils.decode_range(ws4['!ref']);for(let R=HR;R<=r.e.r;R++){[3,4,5].forEach(C=>{const a=ws4[XLSX.utils.encode_cell({r:R,c:C})];if(a&&a.t==='n')a.z='#,##0'});const b=ws4[XLSX.utils.encode_cell({r:R,c:6})];if(b&&b.t==='n')b.z='0.0%'}}
+  XLSX.utils.book_append_sheet(wb,ws4,'구분별 소계');
   [[ws2,[2,3,4]],[ws3,[5]]].forEach(([ws,cols])=>{const r=XLSX.utils.decode_range(ws['!ref']);for(let R=HR;R<=r.e.r;R++)cols.forEach(C=>{const a=ws[XLSX.utils.encode_cell({r:R,c:C})];if(a&&a.t==='n')a.z='#,##0'})});
 
   const safe=s=>String(s||'').replace(/[\\/:*?"<>|]/g,'').trim().slice(0,40);
