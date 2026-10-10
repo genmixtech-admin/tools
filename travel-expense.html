@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.2.3 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.3 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -75,6 +75,11 @@ tfoot td{font-weight:700;background:var(--sunk);border-bottom:0}
 .memo{color:var(--muted);max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .small{font-size:12px;color:var(--muted)}
 .confirm{display:inline-flex;gap:4px;align-items:center;font-size:12px}
+.bulk{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+th.sel,td.sel{width:36px;text-align:center;padding-left:6px;padding-right:6px}
+td.sel input,th.sel input{width:16px;height:16px;cursor:pointer}
+tr.on{background:var(--accent-soft)}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}
 .bar{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--accent)}
@@ -165,9 +170,14 @@ textarea{font:12px var(--f-mono)}
         <input type="date" id="fl-from" aria-label="시작일"><span class="status">~</span><input type="date" id="fl-to" aria-label="종료일">
       </div>
     </div>
+    <div class="bulk" id="bulkBar">
+      <span class="small" id="selInfo">선택한 항목 없음</span>
+      <button class="btn" id="bulkDel" type="button" disabled>선택 삭제</button>
+      <span class="confirm" id="bulkConfirm" hidden><b id="bulkMsg"></b><button class="btn ghost danger" id="bulkYes" type="button">삭제</button><button class="btn ghost" id="bulkNo" type="button">취소</button></span>
+    </div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>사용일시</th><th>소유주</th><th>개인/법인</th><th>결제</th><th>카드</th><th>구분</th><th>상호</th><th>교통 상세</th><th class="n">현지화액</th><th>통화</th><th class="n">환율</th><th class="n">환산액</th><th class="n">수수료</th><th class="n">원화액</th><th>내역</th><th></th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="chkAll" aria-label="전체 선택"></th><th>관리</th><th>사용일시</th><th>소유주</th><th>개인/법인</th><th>결제</th><th>카드</th><th>구분</th><th>상호</th><th>교통 상세</th><th class="n">현지화액</th><th>통화</th><th class="n">환율</th><th class="n">환산액</th><th class="n">수수료</th><th class="n">원화액</th><th>내역</th></tr></thead>
         <tbody id="rows"></tbody>
         <tfoot id="foot"></tfoot>
       </table>
@@ -202,7 +212,7 @@ const fmtDT=d=>String(d||'').replace('T',' ');
 const dayOf=d=>String(d||'').slice(0,10);
 
 let items=[], info={name:'',person:'',from:'',to:''};
-let editingId=null, pendingDelete=null;
+let editingId=null, pendingDelete=null; const selected=new Set();
 const LS='travel-expense-local', LSI='travel-expense-info';
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2600)}
@@ -241,7 +251,8 @@ function upsert(rec){
   else items.push({id:'l'+Date.now().toString(36),...rec});
   save(LS,items); render();
 }
-function remove(id){items=items.filter(x=>x.id!==id);save(LS,items);render()}
+function remove(id){items=items.filter(x=>x.id!==id);selected.delete(id);save(LS,items);render()}
+function removeMany(ids){const del=new Set(ids);items=items.filter(x=>!del.has(x.id));ids.forEach(i=>selected.delete(i));save(LS,items);render()}
 
 /* ---------- 입력 폼 ---------- */
 const nowLocal=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
@@ -368,10 +379,14 @@ function render(){
 
   const tb=$('#rows');
   if(!list.length){
-    tb.innerHTML=`<tr><td colspan="16" class="empty">${items.length?'조건에 맞는 내역이 없습니다.':'아직 입력된 내역이 없습니다. 위 양식에서 첫 사용 내역을 추가해 보세요.'}</td></tr>`;
+    tb.innerHTML=`<tr><td colspan="17" class="empty">${items.length?'조건에 맞는 내역이 없습니다.':'아직 입력된 내역이 없습니다. 위 양식에서 첫 사용 내역을 추가해 보세요.'}</td></tr>`;
     $('#foot').innerHTML='';
   }else{
-    tb.innerHTML=list.map(r=>`<tr>
+    tb.innerHTML=list.map(r=>`<tr${selected.has(r.id)?' class="on"':''}>
+      <td class="sel"><input type="checkbox" data-sel="${r.id}"${selected.has(r.id)?' checked':''} aria-label="선택"></td>
+      <td>${pendingDelete===r.id
+        ?`<span class="confirm">삭제할까요? <button class="btn ghost danger" data-del="${r.id}">삭제</button><button class="btn ghost" data-nodel>취소</button></span>`
+        :`<button class="btn ghost" data-edit="${r.id}">수정</button><button class="btn ghost danger" data-ask="${r.id}">삭제</button>`}</td>
       <td class="mono">${esc(fmtDT(r.date))}</td><td>${esc(r.owner)}</td>
       <td><span class="pill ${r.kind==='법인'?'corp':'pers'}">${esc(r.kind)}</span></td>
       <td>${esc(r.method)}</td><td class="mono">${r.card4?'**** '+esc(r.card4):'—'}</td>
@@ -379,11 +394,8 @@ function render(){
       <td class="n">${fmtLocal(r.local,r.currency)}</td><td class="mono">${esc(r.currency)}</td>
       <td class="n">${r.rate!=null?Number(r.rate).toLocaleString('ko-KR',{maximumFractionDigits:4}):''}</td>
       <td class="n">${fmtKRW(r.base)}</td><td class="n">${r.fee?fmtKRW(r.fee):''}</td>
-      <td class="n"><b>${fmtKRW(r.krw)}</b></td><td class="memo" title="${esc(r.memo)}">${esc(r.memo)||''}</td>
-      <td>${pendingDelete===r.id
-        ?`<span class="confirm">삭제할까요? <button class="btn ghost danger" data-del="${r.id}">삭제</button><button class="btn ghost" data-nodel>취소</button></span>`
-        :`<button class="btn ghost" data-edit="${r.id}">수정</button><button class="btn ghost" data-ask="${r.id}">삭제</button>`}</td></tr>`).join('');
-    $('#foot').innerHTML=`<tr><td colspan="11">합계</td><td class="n">${fmtKRW(baseSum)}</td><td class="n">${fmtKRW(feeSum)}</td><td class="n">${fmtKRW(sum)}</td><td colspan="2"></td></tr>`;
+      <td class="n"><b>${fmtKRW(r.krw)}</b></td><td class="memo" title="${esc(r.memo)}">${esc(r.memo)||''}</td></tr>`).join('');
+    $('#foot').innerHTML=`<tr><td colspan="13">합계</td><td class="n">${fmtKRW(baseSum)}</td><td class="n">${fmtKRW(feeSum)}</td><td class="n">${fmtKRW(sum)}</td><td></td></tr>`;
   }
 
   const max=Math.max(1,...ag.owners.map(o=>o.total));
@@ -393,13 +405,28 @@ function render(){
   $('#byCard').innerHTML=ag.cards.length?ag.cards.map(c=>`<tr><td class="mono">${esc(c.card)}</td><td>${esc(c.owner)}</td><td>${c.kind==='현금'?'현금':`<span class="pill ${c.kind==='법인'?'corp':'pers'}">${c.kind}</span>`}</td><td class="n">${c.n}</td><td class="mono" style="font-size:12px">${esc(localStr(c.local))}</td><td class="n"><b>${fmtKRW(c.total)}</b></td></tr>`).join('')
     +`<tr><td colspan="3"><b>합계</b></td><td class="n"><b>${list.length}</b></td><td></td><td class="n"><b>${fmtKRW(sum)}</b></td></tr>`
     :`<tr><td colspan="6" class="empty">내역이 추가되면 표시됩니다.</td></tr>`;
+  syncSel(list);
 }
+/* ---------- 선택 & 일괄 삭제 ---------- */
+function syncSel(list){
+  list=list||filtered();
+  const vis=list.map(r=>r.id), n=vis.filter(id=>selected.has(id)).length;
+  [...selected].forEach(id=>{if(!vis.includes(id))selected.delete(id)});
+  const all=$('#chkAll'); all.checked=n>0&&n===vis.length; all.indeterminate=n>0&&n<vis.length; all.disabled=!vis.length;
+  $('#selInfo').textContent=n?`${n}건 선택됨`:'선택한 항목 없음';
+  $('#bulkDel').disabled=!n; $('#bulkConfirm').hidden=true; $('#bulkDel').hidden=false;
+}
+$('#chkAll').addEventListener('change',e=>{const vis=filtered().map(r=>r.id);vis.forEach(id=>e.target.checked?selected.add(id):selected.delete(id));render()});
+$('#rows').addEventListener('change',e=>{const id=e.target.dataset&&e.target.dataset.sel;if(!id)return;e.target.checked?selected.add(id):selected.delete(id);e.target.closest('tr').classList.toggle('on',e.target.checked);syncSel()});
+$('#bulkDel').addEventListener('click',()=>{const n=selected.size;if(!n)return;$('#bulkMsg').textContent=`선택한 ${n}건을 삭제할까요? 되돌릴 수 없습니다.`;$('#bulkConfirm').hidden=false;$('#bulkDel').hidden=true});
+$('#bulkNo').addEventListener('click',()=>syncSel());
+$('#bulkYes').addEventListener('click',()=>{const ids=[...selected],n=ids.length;if(ids.includes(editingId))resetForm(false);removeMany(ids);toast(`${n}건을 삭제했습니다`)});
 $('#rows').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   if(b.dataset.edit)startEdit(b.dataset.edit);
   else if(b.dataset.ask){pendingDelete=b.dataset.ask;render()}
   else if('nodel' in b.dataset){pendingDelete=null;render()}
-  else if(b.dataset.del){const id=b.dataset.del;pendingDelete=null;remove(id);toast('삭제했습니다')}
+  else if(b.dataset.del){const id=b.dataset.del;pendingDelete=null;if(id===editingId)resetForm(false);remove(id);toast('삭제했습니다')}
 });
 
 /* ---------- 내보내기 ---------- */
