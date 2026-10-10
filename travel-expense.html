@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.2.2 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.2.3 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -44,7 +44,7 @@ section.info{border-top:3px solid var(--accent)}
 .field{display:grid;gap:4px;min-width:0}
 .field label{font-size:12px;color:var(--muted);font-weight:500}
 .field.wide{grid-column:span 2}
-input[type=datetime-local]{min-width:15em}
+.dt{display:flex;gap:6px;align-items:center}.dt input{flex:1 1 9em;min-width:9em}.dt select{flex:0 0 4.6em;width:4.6em;font-family:var(--f-mono);padding:8px 4px;text-align:center}.dt span{color:var(--muted);font-weight:600}
 @media (max-width:480px){.field.wide{grid-column:1/-1}}
 input,select,textarea{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);min-width:0}
 input.num{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
@@ -113,7 +113,7 @@ textarea{font:12px var(--f-mono)}
     <div class="panel-head"><h2 id="formTitle">사용 내역 입력</h2></div>
     <div id="form" class="form">
       <div class="group">사용 정보</div>
-      <div class="field wide"><label for="f-date">사용일시</label><input type="datetime-local" id="f-date"></div>
+      <div class="field wide"><label for="f-date">사용일시 (24시간제)</label><div class="dt"><input type="date" id="f-date"><select id="f-hh" aria-label="시"></select><span>:</span><select id="f-mm" aria-label="분"></select></div></div>
       <div class="field"><label for="f-owner">소유주</label><input id="f-owner" list="ownerList" placeholder="홍길동"><datalist id="ownerList"></datalist></div>
       <div class="field"><label for="f-cat">구분</label><select id="f-cat"><option>해외교통</option><option>국내교통</option><option>통신</option><option>항공</option><option>숙박</option><option>식음료</option><option>기타</option></select></div>
       <div class="field wide"><label for="f-shop">상호 (사용처)</label><input id="f-shop" list="shopList" placeholder="예: Hilton London Metropole"><datalist id="shopList"></datalist></div>
@@ -245,6 +245,12 @@ function remove(id){items=items.filter(x=>x.id!==id);save(LS,items);render()}
 
 /* ---------- 입력 폼 ---------- */
 const nowLocal=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
+/* 사용일시: 날짜 + 시(00~23) + 분(00~59) */
+const p2=n=>String(n).padStart(2,'0');
+$('#f-hh').innerHTML=Array.from({length:24},(_,i)=>`<option>${p2(i)}</option>`).join('');
+$('#f-mm').innerHTML=Array.from({length:60},(_,i)=>`<option>${p2(i)}</option>`).join('');
+function getDT(){const d=$('#f-date').value;return d?`${d}T${$('#f-hh').value}:${$('#f-mm').value}`:''}
+function setDT(v){const [d,t='00:00']=String(v||'').split('T');$('#f-date').value=d||'';$('#f-hh').value=t.slice(0,2);$('#f-mm').value=t.slice(3,5)}
 function methodVal(){return document.querySelector('input[name=method]:checked').value}
 function kindVal(){return document.querySelector('input[name=kind]:checked').value}
 function syncMethod(){const cash=methodVal()==='현금';$('#f-card').disabled=cash;if(cash)$('#f-card').value=''}
@@ -275,7 +281,7 @@ function doSubmit(){
   const fee=Math.round(num($('#f-fee').value)||0), krw=Math.round(num($('#f-krw').value));
   const rate=num($('#f-rate').value);
   const rec={
-    date:$('#f-date').value, owner:$('#f-owner').value.trim(), method:methodVal(), kind:kindVal(),
+    date:getDT(), owner:$('#f-owner').value.trim(), method:methodVal(), kind:kindVal(),
     card4:methodVal()==='카드'?$('#f-card').value:'', cat, shop:$('#f-shop').value.trim(),
     tmode:t?$('#t-mode').value:'', tfrom:t?$('#t-from').value.trim():'', tto:t?$('#t-to').value.trim():'',
     currency:cur, local:num($('#f-local').value), rate:(cur!=='KRW'&&isFinite(rate))?rate:null,
@@ -300,14 +306,14 @@ function resetForm(keep){
   editingId=null; $('#submitBtn').textContent='추가'; $('#cancelEdit').hidden=true;
   ['#f-local','#f-base','#f-fee','#f-krw','#f-memo','#f-shop','#t-from','#t-to'].forEach(s=>$(s).value='');
   $('#t-mode').value='';
-  if(!keep)$('#f-date').value=nowLocal();
+  if(!keep)setDT(nowLocal());
   syncMethod(); syncCat(); syncCur();
 }
 $('#cancelEdit').addEventListener('click',()=>resetForm(false));
 function startEdit(id){
   const r=items.find(x=>x.id===id); if(!r)return;
   editingId=id;
-  $('#f-date').value=r.date.length===10?r.date+'T00:00':r.date; $('#f-owner').value=r.owner;
+  setDT(r.date.length===10?r.date+'T00:00':r.date); $('#f-owner').value=r.owner;
   document.querySelector(`input[name=method][value="${r.method}"]`).checked=true;
   document.querySelector(`input[name=kind][value="${r.kind}"]`).checked=true;
   $('#f-cat').value=r.cat||'기타'; $('#f-shop').value=r.shop||'';
