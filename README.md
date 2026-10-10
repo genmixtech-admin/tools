@@ -4,7 +4,7 @@
 
 | 도구 | 파일 | 웹 주소 |
 |---|---|---|
-| 출장비 정산 (v1.3.1) | `travel-expense.html` | https://genmixtech-admin.github.io/tools/travel-expense.html |
+| 출장비 정산 (v1.3.2) | `travel-expense.html` | https://genmixtech-admin.github.io/tools/travel-expense.html |
 
 - 원본: Obsidian `100_Intranet_경영정보/tools/`
 - 관리자: genmixtech.ai@gmail.com
