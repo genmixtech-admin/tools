@@ -487,7 +487,7 @@ $('#exportBtn').addEventListener('click',()=>exportXlsx());
 const parseMails=s=>String(s||'').split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean);
 const okMail=m=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m);
 /* 발송: genmixtech.ai@gmail.com 계정의 Apps Script(mail-sender.gs)가 엑셀을 첨부해 Gmail로 보냄 */
-const MAIL_ENDPOINT='';
+const MAIL_ENDPOINT='https://script.google.com/macros/s/AKfycbzTX4LcLXFSAkqbxTC6bshk6evPflcXyH_1HNQPivDuGAX4WjEJSwm3XBw3YDPBo_mD/exec';
 let sending=false;
 $('#mailBtn').addEventListener('click',async()=>{
   if(sending)return;

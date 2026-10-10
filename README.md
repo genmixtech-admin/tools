@@ -4,9 +4,13 @@
 
 | 도구 | 파일 | 웹 주소 |
 |---|---|---|
-| 출장비 정산 (v1.4) | `travel-expense.html` | https://genmixtech-admin.github.io/tools/travel-expense.html |
+| 출장비 정산 (v1.5) | `travel-expense.html` | https://genmixtech-admin.github.io/tools/travel-expense.html |
 
 - 원본: Obsidian `100_Intranet_경영정보/tools/`
 - 관리자: genmixtech.ai@gmail.com
 - 입력 데이터는 각 사용자 브라우저에만 저장되며 서버로 전송되지 않습니다.
 - 회사 정보·개인정보를 이 저장소(공개)에 올리지 마세요. (GitHub 사용 정책 참조)
+
+## 메일 발송 (v1.5~)
+- `mail-sender.gs`: genmixtech.ai@gmail.com 계정의 Google Apps Script(웹 앱)로 배포. 페이지가 엑셀을 보내면 Gmail로 첨부 발송.
+- 하루 발송 한도 50건, 모든 발송은 관리 계정에 숨은 참조로 기록.
