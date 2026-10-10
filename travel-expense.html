@@ -119,7 +119,7 @@ textarea{font:12px var(--f-mono)}
     <div id="form" class="form">
       <div class="group">사용 정보</div>
       <div class="field wide"><label for="f-date">사용일시 (24시간제)</label><div class="dt"><input type="date" id="f-date"><select id="f-hh" aria-label="시"></select><span>:</span><select id="f-mm" aria-label="분"></select></div></div>
-      <div class="field"><label for="f-owner">소유주</label><input id="f-owner" list="ownerList" placeholder="홍길동"><datalist id="ownerList"></datalist></div>
+      <div class="field"><label for="f-owner">이름</label><input id="f-owner" list="ownerList" placeholder="홍길동"><datalist id="ownerList"></datalist></div>
       <div class="field"><label for="f-cat">구분</label><select id="f-cat"><option>해외교통</option><option>국내교통</option><option>통신</option><option>항공</option><option>숙박</option><option>식음료</option><option>기타</option></select></div>
       <div class="field wide"><label for="f-shop">상호 (사용처)</label><input id="f-shop" list="shopList" placeholder="예: Hilton London Metropole"><datalist id="shopList"></datalist></div>
 
@@ -164,7 +164,7 @@ textarea{font:12px var(--f-mono)}
     <div class="panel-head">
       <h2 id="listTitle">정산 내역</h2>
       <div class="filters">
-        <select id="fl-owner" aria-label="소유주 필터"><option value="">전체 소유주</option></select>
+        <select id="fl-owner" aria-label="이름 필터"><option value="">전체 이름</option></select>
         <select id="fl-kind" aria-label="개인/법인 필터"><option value="">개인+법인</option><option>법인</option><option>개인</option></select>
         <select id="fl-cat" aria-label="구분 필터"><option value="">전체 구분</option><option>해외교통</option><option>국내교통</option><option>통신</option><option>항공</option><option>숙박</option><option>식음료</option><option>기타</option></select>
         <input type="date" id="fl-from" aria-label="시작일"><span class="status">~</span><input type="date" id="fl-to" aria-label="종료일">
@@ -177,7 +177,7 @@ textarea{font:12px var(--f-mono)}
     </div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th class="sel"><input type="checkbox" id="chkAll" aria-label="전체 선택"></th><th>관리</th><th>사용일시</th><th>소유주</th><th>개인/법인</th><th>결제</th><th>카드</th><th>구분</th><th>상호</th><th>교통 상세</th><th class="n">현지화액</th><th>통화</th><th class="n">환율</th><th class="n">환산액</th><th class="n">수수료</th><th class="n">원화액</th><th>내역</th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="chkAll" aria-label="전체 선택"></th><th>관리</th><th>사용일시</th><th>이름</th><th>개인/법인</th><th>결제</th><th>카드</th><th>구분</th><th>상호</th><th>교통 상세</th><th class="n">현지화액</th><th>통화</th><th class="n">환율</th><th class="n">환산액</th><th class="n">수수료</th><th class="n">원화액</th><th>내역</th></tr></thead>
         <tbody id="rows"></tbody>
         <tfoot id="foot"></tfoot>
       </table>
@@ -187,11 +187,11 @@ textarea{font:12px var(--f-mono)}
   <div class="stats">
     <section class="panel" aria-labelledby="byOwnerTitle">
       <h2 id="byOwnerTitle">개인별 소계</h2>
-      <div class="tbl-wrap"><table><thead><tr><th>소유주</th><th class="n">건수</th><th class="n">법인</th><th class="n">개인</th><th class="n">합계 (원)</th><th></th></tr></thead><tbody id="byOwner"></tbody></table></div>
+      <div class="tbl-wrap"><table><thead><tr><th>이름</th><th class="n">건수</th><th class="n">법인</th><th class="n">개인</th><th class="n">합계 (원)</th><th></th></tr></thead><tbody id="byOwner"></tbody></table></div>
     </section>
     <section class="panel" aria-labelledby="byCardTitle">
       <h2 id="byCardTitle">카드별 소계</h2>
-      <div class="tbl-wrap"><table><thead><tr><th>카드</th><th>소유주</th><th>구분</th><th class="n">건수</th><th>현지화 합계</th><th class="n">합계 (원)</th></tr></thead><tbody id="byCard"></tbody></table></div>
+      <div class="tbl-wrap"><table><thead><tr><th>카드</th><th>이름</th><th>구분</th><th class="n">건수</th><th>현지화 합계</th><th class="n">합계 (원)</th></tr></thead><tbody id="byCard"></tbody></table></div>
     </section>
   </div>
 </div>
@@ -299,7 +299,7 @@ function doSubmit(){
     fee, krw, base:isFinite(krw)?krw-fee:NaN, memo:$('#f-memo').value.trim()
   };
   const miss=[];
-  if(!rec.date)miss.push('사용일시'); if(!rec.owner)miss.push('소유주');
+  if(!rec.date)miss.push('사용일시'); if(!rec.owner)miss.push('이름');
   if(rec.method==='카드'&&!/^\d{4}$/.test(rec.card4))miss.push('카드번호 4자리');
   // 교통수단은 새로 입력할 때만 필수 (v1.1 이전 내역 수정은 비워 둬도 저장)
   const legacy=editingId&&!(items.find(x=>x.id===editingId)||{}).tmode;
@@ -362,7 +362,7 @@ const transStr=r=>isTrans(r.cat)&&r.tmode?[r.tmode,(r.tfrom||r.tto)?`${r.tfrom||
 function render(){
   const owners=[...new Set(items.map(r=>r.owner))].sort();
   const sel=$('#fl-owner'),cur=sel.value;
-  sel.innerHTML='<option value="">전체 소유주</option>'+owners.map(o=>`<option${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+  sel.innerHTML='<option value="">전체 이름</option>'+owners.map(o=>`<option${o===cur?' selected':''}>${esc(o)}</option>`).join('');
   $('#ownerList').innerHTML=owners.map(o=>`<option value="${esc(o)}">`).join('');
   $('#cardList').innerHTML=[...new Set(items.filter(r=>r.card4).map(r=>r.card4))].map(c=>`<option value="${c}">`).join('');
   $('#shopList').innerHTML=[...new Set(items.filter(r=>r.shop).map(r=>r.shop))].map(c=>`<option value="${esc(c)}">`).join('');
@@ -430,7 +430,7 @@ $('#rows').addEventListener('click',e=>{
 });
 
 /* ---------- 내보내기 ---------- */
-const HEAD=['사용일시','소유주','개인/법인','현금/카드','카드번호(끝4자리)','구분','상호','교통수단','출발지','목적지','통화','현지화액','적용환율','환산액(원)','환수수료(원)','원화액 합계(원)','내역'];
+const HEAD=['사용일시','이름','개인/법인','현금/카드','카드번호(끝4자리)','구분','상호','교통수단','출발지','목적지','통화','현지화액','적용환율','환산액(원)','환수수료(원)','원화액 합계(원)','내역'];
 const rowOf=r=>[fmtDT(r.date),r.owner,r.kind,r.method,r.card4||'',r.cat||'기타',r.shop||'',r.tmode||'',r.tfrom||'',r.tto||'',r.currency,r.local,r.rate??'',r.base,r.fee||0,r.krw,r.memo||''];
 const periodStr=()=>info.from||info.to?`${info.from||''} ~ ${info.to||''}`:'';
 const infoRows=()=>[['출장명',info.name||''],['출장자',info.person||''],['출장기간',periodStr()]];
@@ -456,11 +456,11 @@ $('#exportBtn').addEventListener('click',()=>{
   for(let i=first;i<=last+1;i++){[['L','#,##0.00'],['M','#,##0.####'],['N','#,##0'],['O','#,##0'],['P','#,##0']].forEach(([c,z])=>{const cell=ws1[c+i];if(cell)cell.z=z})}
   XLSX.utils.book_append_sheet(wb,ws1,'정산내역');
 
-  const ws2=XLSX.utils.aoa_to_sheet([...infoRows(),[],['소유주','건수','법인(원)','개인(원)','합계(원)'],...ag.owners.map(o=>[o.owner,o.n,o.corp,o.pers,o.total]),
+  const ws2=XLSX.utils.aoa_to_sheet([...infoRows(),[],['이름','건수','법인(원)','개인(원)','합계(원)'],...ag.owners.map(o=>[o.owner,o.n,o.corp,o.pers,o.total]),
     ['합계',n,ag.owners.reduce((s,o)=>s+o.corp,0),ag.owners.reduce((s,o)=>s+o.pers,0),ag.owners.reduce((s,o)=>s+o.total,0)]]);
   ws2['!cols']=[14,8,14,14,14].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb,ws2,'개인별 소계');
-  const ws3=XLSX.utils.aoa_to_sheet([...infoRows(),[],['카드','소유주','구분','건수','현지화 합계','합계(원)'],...ag.cards.map(c=>[c.card,c.owner,c.kind,c.n,localStr(c.local),c.total]),
+  const ws3=XLSX.utils.aoa_to_sheet([...infoRows(),[],['카드','이름','구분','건수','현지화 합계','합계(원)'],...ag.cards.map(c=>[c.card,c.owner,c.kind,c.n,localStr(c.local),c.total]),
     ['합계','','',n,'',ag.cards.reduce((s,c)=>s+c.total,0)]]);
   ws3['!cols']=[12,12,8,8,28,14].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb,ws3,'카드별 소계');
