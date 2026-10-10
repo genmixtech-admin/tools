@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.6.1 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.7 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -337,9 +337,10 @@ function resetForm(keep){
   syncMethod(); syncCat(); syncCur();
 }
 $('#cancelEdit').addEventListener('click',()=>resetForm(false));
-function startEdit(id){
+/* copy=true: 내용만 양식에 불러와 새 항목으로 추가 (원본은 그대로) */
+function startEdit(id,copy){
   const r=items.find(x=>x.id===id); if(!r)return;
-  editingId=id;
+  editingId=copy?null:id;
   setDT(r.date.length===10?r.date+'T00:00':r.date); $('#f-owner').value=r.owner;
   document.querySelector(`input[name=method][value="${r.method}"]`).checked=true;
   document.querySelector(`input[name=kind][value="${r.kind}"]`).checked=true;
@@ -349,7 +350,8 @@ function startEdit(id){
   $('#f-card').value=r.card4||'';
   $('#f-local').value=r.local; $('#f-rate').value=r.rate??''; $('#f-fee').value=r.fee||'';
   $('#f-base').value=fmtKRW(r.base); $('#f-krw').value=fmtKRW(r.krw); $('#f-memo').value=r.memo||'';
-  $('#submitBtn').textContent='수정 저장'; $('#cancelEdit').hidden=false;
+  $('#submitBtn').textContent=copy?'복사본 추가':'수정 저장'; $('#cancelEdit').textContent=copy?'복사 취소':'수정 취소'; $('#cancelEdit').hidden=false;
+  if(copy)toast('내용을 복사했습니다. 날짜·금액 등을 고친 뒤 \'복사본 추가\'를 누르세요');
   $('#form').scrollIntoView({behavior:'smooth',block:'start'}); $('#f-date').focus({preventScroll:true});
 }
 
@@ -413,7 +415,7 @@ function render(){
       <td class="sel"><input type="checkbox" data-sel="${r.id}"${selected.has(r.id)?' checked':''} aria-label="선택"></td>
       <td>${pendingDelete===r.id
         ?`<span class="confirm">삭제할까요? <button class="btn ghost danger" data-del="${r.id}">삭제</button><button class="btn ghost" data-nodel>취소</button></span>`
-        :`<button class="btn ghost" data-edit="${r.id}">수정</button><button class="btn ghost danger" data-ask="${r.id}">삭제</button>`}</td>
+        :`<button class="btn ghost" data-edit="${r.id}">수정</button><button class="btn ghost" data-copy="${r.id}">복사</button><button class="btn ghost danger" data-ask="${r.id}">삭제</button>`}</td>
       <td class="mono">${esc(fmtDT(r.date))}</td><td>${esc(r.owner)}</td>
       <td><span class="pill ${r.kind==='법인'?'corp':'pers'}">${esc(r.kind)}</span></td>
       <td>${esc(r.method)}</td><td class="mono">${r.card4?'**** '+esc(r.card4):'—'}</td>
@@ -456,6 +458,7 @@ $('#bulkYes').addEventListener('click',()=>{const ids=[...selected],n=ids.length
 $('#rows').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   if(b.dataset.edit)startEdit(b.dataset.edit);
+  else if(b.dataset.copy)startEdit(b.dataset.copy,true);
   else if(b.dataset.ask){pendingDelete=b.dataset.ask;render()}
   else if('nodel' in b.dataset){pendingDelete=null;render()}
   else if(b.dataset.del){const id=b.dataset.del;pendingDelete=null;if(id===editingId)resetForm(false);remove(id);toast('삭제했습니다')}
