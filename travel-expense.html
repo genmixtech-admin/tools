@@ -2,7 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.2 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.2.1 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -282,11 +282,15 @@ function doSubmit(){
   const miss=[];
   if(!rec.date)miss.push('사용일시'); if(!rec.owner)miss.push('소유주');
   if(rec.method==='카드'&&!/^\d{4}$/.test(rec.card4))miss.push('카드번호 4자리');
-  if(t&&!rec.tmode)miss.push('교통수단');
+  // 교통수단은 새로 입력할 때만 필수 (v1.1 이전 내역 수정은 비워 둬도 저장)
+  const legacy=editingId&&!(items.find(x=>x.id===editingId)||{}).tmode;
+  if(t&&!rec.tmode&&!legacy)miss.push('교통수단');
   if(!isFinite(rec.local))miss.push('현지화액'); if(!isFinite(rec.krw))miss.push('원화액 합계');
-  if(miss.length){err.textContent=`${miss.join(', ')} 항목을 확인해 주세요.`;err.hidden=false;return}
+  if(miss.length){const m=`${miss.join(', ')} 항목을 확인해 주세요.`;err.textContent=m;err.hidden=false;toast(m);err.scrollIntoView({behavior:'smooth',block:'center'});return}
   const wasEdit=!!editingId;
-  upsert(rec); toast(wasEdit?'수정했습니다':'추가했습니다'); resetForm(true);
+  upsert(rec); toast(wasEdit?'수정했습니다':'추가했습니다');
+  if(wasEdit){document.querySelector('input[name=method][value="카드"]').checked=true;document.querySelector('input[name=kind][value="법인"]').checked=true}
+  resetForm(true);
 }
 $('#submitBtn').addEventListener('click',doSubmit);
 $('#form').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();doSubmit()}});
