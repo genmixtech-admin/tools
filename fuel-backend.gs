@@ -1,5 +1,5 @@
 /**
- * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v9 (영수증: 일자+시각 인식, 같은 일시 중복 제거)
+ * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v10 (영수증: 일자+시각+금액 중복 제거, 시각 탐색 범위 확대)
  *  - API 키는 "스크립트 속성"에만 보관합니다. HTML에는 키가 들어가지 않습니다.
  *
  * 스크립트 속성
@@ -48,7 +48,7 @@ function authorize() {
 /* ───── 라우팅 ───── */
 function doGet(e) {
   try {
-    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v9)' });
+    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v10)' });
     const te = tokenError_(e.parameter.token); if (te) return out({ ok: false, error: te });
     switch (e.parameter.action) {
       case 'price':    return out({ ok: true, ...gyeonggiPrice_() });
@@ -224,9 +224,14 @@ const LABEL_RE = /공\s?급\s?가\s?액|부\s?가\s?세|세\s?액|합\s?계|통\
 const HAS_LABEL = new RegExp(LABEL_RE.source);
 const kindOf_ = l => SUPPLY_RE.test(l) ? 's' : VAT_RE.test(l) ? 'v' : 't';     // 공급가액 / 부가세 / 통행료·합계
 const ymd_ = d => `${d[1]}-${d[2].padStart(2, '0')}-${d[3].padStart(2, '0')}`;
-/* 날짜 바로 뒤(40자 이내)의 시각: "16시58분", "16:58", "16:58:07" → "16:58" */
+/* 날짜 뒤의 시각: "16시58분", "16:58", "16:58:07" → "16:58"
+ * 날짜와 시각이 다른 줄에 있거나 사이에 차종·결제방법 줄이 끼어도 찾도록 120자까지 보되,
+ * 다음 날짜가 나오기 전까지만 봅니다(옆 영수증의 시각을 가져오지 않도록). */
 function timeAt_(s, pos) {
-  const t = String(s).slice(pos, pos + 40).match(/(\d{1,2})\s*시\s*(\d{1,2})\s*분|\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+  s = String(s);
+  let seg = s.slice(pos, pos + 120);
+  const nd = seg.search(/20\d{2}\s?[.\-/년]\s?\d{1,2}\s?[.\-/월]/); if (nd > 0) seg = seg.slice(0, nd);
+  const t = seg.replace(/\s+/g, ' ').match(/(\d{1,2})\s*시\s*(\d{1,2})\s*분|\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
   if (!t) return '';
   const h = t[1] || t[3], m = t[2] || t[4];
   return +h < 24 && +m < 60 ? `${h.padStart(2, '0')}:${m.padStart(2, '0')}` : '';
@@ -363,7 +368,8 @@ function parseVatTriples_(text) {
  *  같은 날짜끼리만 비교합니다(날짜가 비어 있으면 모두와 비교). */
 function dropSupplyRows_(rows) {
   const seen = new Set();
-  rows = rows.filter(r => { if (!r.date || !r.time) return true; const k = r.date + 'T' + r.time; if (seen.has(k)) return false; seen.add(k); return true; });  // 같은 일시는 한 건
+  // 같은 일시·같은 금액은 한 건 (영업소명은 OCR 오독이 잦아 키에서 제외). 시각이 없으면 지우지 않음 — 같은 날 같은 곳·같은 금액을 두 번 지나는 정상 사례 보호
+  rows = rows.filter(r => { if (!r.date || !r.time) return true; const k = `${r.date}T${r.time}|${+r.amount || 0}`; if (seen.has(k)) return false; seen.add(k); return true; });
   const sameDay = (a, b) => !a.date || !b.date || a.date === b.date;
   return rows.filter((a, i) => {
     const x = +a.amount || 0; if (!x) return true;
@@ -385,7 +391,8 @@ function parsePayLines_(text) {
   const pays = [...text.matchAll(PAY_RE)].map(m => ({ pos: m.index, v: Number(m[1].replace(/,/g, '')) })).filter(p => p.v >= 100);
   if (!pays.length) return [];
   const dates = datesIn_(text);
-  const gates = [...text.matchAll(/([가-힣A-Za-z0-9]{1,10})\s?(?:영업소|요금소)/g)].filter(m => !/^(입구|출구)$/.test(m[1])).map(m => ({ pos: m.index, v: m[1] }));
+  const gates = [...text.matchAll(/([가-힣A-Za-z0-9]{1,10})\s?(?:영업소|요금소)|출\s?구\s*(?:영업소)?\s*[:：]?\s*([가-힣]{2,10})/g)]
+    .map(m => ({ pos: m.index, v: m[1] || m[2] })).filter(g => g.v && !/^(입구|출구)$/.test(g.v) && !NOT_GATE.test(g.v));
   const at = (list, p, k) => list.length === pays.length ? list[k] : (list.filter(x => x.pos <= p.pos).pop() || list[0] || {});
   return pays.map((p, k) => { const d = at(dates, p, k); return { date: d.v || '', time: d.t || '', gate: at(gates, p, k).v || '', amount: p.v }; });
 }

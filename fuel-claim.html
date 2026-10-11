@@ -251,13 +251,15 @@ function renderTrips(){
   </tr>`).join("");
   aiToggle();totals();
 }
-// 같은 일자·시각(분 단위)은 한 건만: 영수증 한 장 = 결제 시각 하나
-const tollKey=t=>t.date&&t.time?`${t.date}T${t.time}`:"";
+// 같은 일자·시각(분)·금액은 한 건만: 영수증 한 장 = 결제 시각 하나. 영업소명은 OCR 오독이 잦아 키에서 제외
+const tollKey=t=>t.date&&t.time?`${t.date}T${t.time}|${+t.amt||0}`:"";
+// 시각이 없는 행은 자동으로 지우지 않고, 같은 날·같은 톨게이트·같은 금액이면 '중복 의심'으로 표시만
+const softKey=t=>!t.time&&t.date&&t.gate&&+t.amt?`${t.date}|${t.gate}|${+t.amt}`:"";
 function renderTolls(){
-  const cnt={};S.tolls.forEach(t=>{const k=tollKey(t);if(k)cnt[k]=(cnt[k]||0)+1});
+  const cnt={},soft={};S.tolls.forEach(t=>{const k=tollKey(t);if(k)cnt[k]=(cnt[k]||0)+1;const q=softKey(t);if(q)soft[q]=(soft[q]||0)+1});
   $("#tollBody").innerHTML=S.tolls.map(t=>`<tr data-id="${t.id}">
     <td><input type="date" data-k="date" value="${esc(t.date)}" aria-label="일자"></td>
-    <td><input type="time" data-k="time" value="${esc(t.time||"")}" aria-label="시각">${cnt[tollKey(t)]>1?'<span class="pill dup">중복</span>':""}</td>
+    <td><input type="time" data-k="time" value="${esc(t.time||"")}" aria-label="시각">${cnt[tollKey(t)]>1?'<span class="pill dup">중복</span>':soft[softKey(t)]>1?'<span class="pill new" title="시각이 없어 자동으로 거르지 않았습니다. 같은 영수증인지 확인하세요.">중복 의심</span>':""}</td>
     <td><input data-k="gate" value="${esc(t.gate)}" aria-label="톨게이트"></td>
     <td><input data-k="route" value="${esc(t.route)}" aria-label="구간" placeholder="예: 본사 → 평택 고객사"></td>
     <td><input class="num" data-k="amt" inputmode="numeric" value="${t.amt??""}" aria-label="금액"></td>
@@ -295,7 +297,7 @@ function bindTable(body,list,after){
       if(row&&(+row.km||0)>0){row.km="";row.est=false;row.toll=0;row.hit="";after();
         $("#tripNote").className="note";$("#tripNote").textContent="출발지·도착지가 바뀌어 KM를 비웠습니다. ‘거리’를 눌러 다시 계산하세요.";}
       return;}
-    if(["proj","rt"].includes(k)||(list==="tolls"&&(k==="date"||k==="time")))after()});
+    if(["proj","rt"].includes(k)||(list==="tolls"&&["date","time","gate","amt"].includes(k)))after()});
   body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const tr=b.closest("tr"),id=+tr.dataset.id;
     if(b.dataset.act==="del"){S[list]=S[list].filter(r=>r.id!==id);after()}
     if(b.dataset.act==="est")estimate([S.trips.find(r=>r.id===id)],b)});
