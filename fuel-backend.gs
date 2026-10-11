@@ -1,5 +1,5 @@
 /**
- * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v10 (영수증: 일자+시각+금액 중복 제거, 시각 탐색 범위 확대)
+ * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v11 (주행이력 DB: 구간별 중앙값 · 15%/5km 편차 경고)
  *  - API 키는 "스크립트 속성"에만 보관합니다. HTML에는 키가 들어가지 않습니다.
  *
  * 스크립트 속성
@@ -10,7 +10,8 @@
  *   NAVER_HUB_ID / NAVER_HUB_SECRET
  *                         (선택) 네이버클라우드 NAVER API HUB 키. 둘 다 있을 때만 네이버 장소검색 사용
  *   KAKAO_REST_KEY        (선택) 카카오 developers REST API 키 → 카카오 로컬 키워드 검색 (무료)
- *   LOOKUP_SHEET_ID       (선택) 장소 LOOKUP 구글시트 ID. 첫 탭 A 명칭 | B 주소 | C 별칭(쉼표 구분)
+ *   LOOKUP_SHEET_ID       (선택) 장소 LOOKUP 구글시트 ID. 첫 탭 A 명칭 | B 주소 | C 별칭(쉼표 구분) | D 구분 | E 기존 기록 편도 KM
+ *                         같은 파일에 '주행이력' 탭을 자동으로 만들어 제출된 주행기록을 쌓습니다(구간별 중앙값 → 편차 경고).
  *   MAIL_DOMAIN           (선택) 메일 수신 허용 도메인, 쉼표 구분 (예: genmixtech.com)
  *
  * v2 변경 후 할 일
@@ -42,13 +43,13 @@ function checkProps() {
 function authorize() {
   Logger.log('메일 일일 잔여 발송량: ' + MailApp.getRemainingDailyQuota());
   Logger.log('드라이브 확인: ' + DriveApp.getRootFolder().getName());
-  if (P('LOOKUP_SHEET_ID')) Logger.log('LOOKUP 시트: ' + SpreadsheetApp.openById(P('LOOKUP_SHEET_ID')).getName());
+  if (P('LOOKUP_SHEET_ID')) { Logger.log('LOOKUP 시트: ' + SpreadsheetApp.openById(P('LOOKUP_SHEET_ID')).getName()); Logger.log('주행이력 탭: ' + histSheet_().getName()); }
 }
 
 /* ───── 라우팅 ───── */
 function doGet(e) {
   try {
-    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v10)' });
+    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v11)' });
     const te = tokenError_(e.parameter.token); if (te) return out({ ok: false, error: te });
     switch (e.parameter.action) {
       case 'price':    return out({ ok: true, ...gyeonggiPrice_() });
@@ -64,6 +65,7 @@ function doPost(e) {
     const te = tokenError_(body.token); if (te) return out({ ok: false, error: te });
     if (body.action === 'ocr')  return out({ ok: true, ...ocrFiles_(body.files || body.images || []) });
     if (body.action === 'mail') return out({ ok: true, ...sendMail_(body) });
+    if (body.action === 'record') return out({ ok: true, ...recordTrips_(body) });
     return out({ ok: false, error: '알 수 없는 요청' });
   } catch (err) { return out({ ok: false, error: String(err.message || err) }); }
 }
@@ -127,15 +129,16 @@ const FINDERS = [
 const norm_ = s => String(s || '').replace(/\s+/g, '').toLowerCase();
 function lookupTable_() {
   const id = P('LOOKUP_SHEET_ID'); if (!id) return {};
-  const cache = CacheService.getScriptCache(), c = cache.get('lookup1');
+  const cache = CacheService.getScriptCache(), c = cache.get('lookup2');
   if (c) return JSON.parse(c);
   const map = {};
-  SpreadsheetApp.openById(id).getSheets()[0].getDataRange().getDisplayValues().slice(1).forEach(([name, addr, alias]) => {
+  SpreadsheetApp.openById(id).getSheets()[0].getDataRange().getDisplayValues().slice(1).forEach(([name, addr, alias, kind, km]) => {
     name = String(name || '').trim(); addr = String(addr || '').trim();
     if (!name || !addr) return;                                  // 주소가 빈 행은 건너뜀 → 지도 검색으로
-    [name, ...String(alias || '').split(',')].map(norm_).filter(Boolean).forEach(k => { map[k] = { name, addr }; });
+    const v = { name, addr, kind: String(kind || '').trim(), km: Number(String(km || '').replace(/[^\d.]/g, '')) || 0 };
+    [name, ...String(alias || '').split(',')].map(norm_).filter(Boolean).forEach(k => { map[k] = v; });
   });
-  cache.put('lookup1', JSON.stringify(map), 600);
+  cache.put('lookup2', JSON.stringify(map), 600);
   return map;
 }
 
@@ -145,7 +148,7 @@ function locate_(q, log) {
   let row = null;
   try { row = lookupTable_()[norm_(q)] || null; if (row && log) log(`LOOKUP 시트: ${q} → ${row.addr}`); }
   catch (e) { if (log) log('LOOKUP 시트: 오류 ' + e.message); }
-  const query = row ? row.addr : q, named = hit => row ? { ...hit, label: `${row.name} (${hit.label})` } : hit;
+  const query = row ? row.addr : q, named = hit => row ? { ...hit, lk: row.name, label: `${row.name} (${hit.label})` } : hit;
   const cache = CacheService.getScriptCache(), k = 'loc2:' + query, c = cache.get(k);
   if (c) return named(JSON.parse(c));
   const errs = [];
@@ -161,7 +164,12 @@ function locate_(q, log) {
 }
 
 function route_(from, to, log) {
-  const a = locate_(from, log), b = locate_(to, log), errs = [];
+  const a = locate_(from, log), b = locate_(to, log);
+  const r = routeOnly_(a, b, log), fk = placeKey_(a), tk = placeKey_(b), rk = routeKey_(fk, tk);
+  return { ...r, fromKey: fk, toKey: tk, routeKey: rk, base: baseFor_(rk, a, b) };
+}
+function routeOnly_(a, b, log) {
+  const errs = [];
   if (P('NCP_KEY_ID')) {
     try {
       const s = http_(`${NCP_DRIVING}?start=${a.xy}&goal=${b.xy}&option=traoptimal`, ncpH_(), '네이버 길찾기').route.traoptimal[0].summary;
@@ -183,7 +191,7 @@ function route_(from, to, log) {
 /* 진단: 편집기에서 실행 → 실행 로그에서 단계별 결과 확인 (출발지·도착지는 바꿔서) */
 /* 진단: LOOKUP 시트를 캐시 없이 다시 읽어 등록된 명칭·별칭 목록을 로그로 확인 */
 function testLookup() {
-  CacheService.getScriptCache().remove('lookup1');
+  CacheService.getScriptCache().remove('lookup2');
   const map = lookupTable_();
   Logger.log(`등록 ${Object.keys(map).length}건`);
   Object.keys(map).forEach(k => Logger.log(`${k} → ${map[k].addr}`));
@@ -193,6 +201,86 @@ function testRoute() {
   CacheService.getScriptCache().removeAll(['loc2:평택시청', 'loc2:수원시청']);
   try { Logger.log('결과: ' + JSON.stringify(route_('평택시청', '수원시청', m => Logger.log(m)))); }
   catch (e) { Logger.log('실패: ' + e.message); }
+}
+
+/* ───── 2-1. 주행 이력 DB (LOOKUP 스프레드시트의 '주행이력' 탭) ─────
+ * 제출된 주행기록을 쌓아 구간별 중앙값을 만들고, 새 거리와 비교해 편차가 크면 경고합니다.
+ *  - 구간 키: LOOKUP 명칭이 있으면 'L:명칭', 없으면 좌표를 약 200m 단위로 반올림한 'G:경도,위도'
+ *  - A→B와 B→A는 같은 구간, 거리는 편도 기준
+ *  - 기준값: 경고가 붙은 기록을 뺀 '신청 편도KM'의 중앙값 (3건 이상일 때)
+ *            3건 미만이면 LOOKUP 'E 기존 기록 편도 KM'(자사 ↔ 해당 장소)을 초기 기준으로 사용
+ *  - 판정 기준: |값 − 기준| > max(기준 × 15%, 5km) 이면 경고
+ */
+const HIST_TAB = '주행이력';
+const HIST_HEAD = ['기록시각', '사용일자', '신청자', '소속', '출발(입력)', '도착(입력)', '출발(찾은 곳)', '도착(찾은 곳)',
+  '구간키', 'API 편도KM', '신청 편도KM', '왕복', '프로젝트', '판정', '사유', '사용 지도'];
+const MIN_N = 3, TOL_PCT = 0.15, TOL_KM = 5;
+const tolOf_ = ref => Math.max(ref * TOL_PCT, TOL_KM);
+
+function placeKey_(hit) {
+  if (hit.lk) return 'L:' + hit.lk;
+  const [x, y] = String(hit.xy).split(',').map(Number), r = v => (Math.round(v * 500) / 500).toFixed(3);
+  return `G:${r(x)},${r(y)}`;
+}
+const routeKey_ = (a, b) => [a, b].sort().join(' ⇄ ');
+const median_ = arr => { const s = [...arr].sort((p, q) => p - q), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+function histSheet_() {
+  const id = P('LOOKUP_SHEET_ID'); if (!id) throw new Error('LOOKUP_SHEET_ID가 없어 주행 이력을 저장할 수 없습니다.');
+  const ss = SpreadsheetApp.openById(id);
+  let sh = ss.getSheetByName(HIST_TAB);
+  if (!sh) { sh = ss.insertSheet(HIST_TAB); sh.appendRow(HIST_HEAD); sh.setFrozenRows(1); }
+  return sh;
+}
+/* 구간별 통계 { 구간키: {n, median, min, max} } — 10분 캐시, 기록 저장 시 갱신 */
+function histStats_() {
+  const cache = CacheService.getScriptCache(), c = cache.get('hist1');
+  if (c) return JSON.parse(c);
+  const by = {};
+  if (P('LOOKUP_SHEET_ID')) {
+    const sh = SpreadsheetApp.openById(P('LOOKUP_SHEET_ID')).getSheetByName(HIST_TAB);
+    if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, HIST_HEAD.length).getValues().forEach(r => {
+      const key = String(r[8] || ''), km = Number(r[10]) || 0, verdict = String(r[13] || '');
+      if (!key || !km || verdict.indexOf('경고') >= 0) return;          // 경고가 붙은 기록은 기준에서 제외
+      (by[key] = by[key] || []).push(km);
+    });
+  }
+  const out = {};
+  Object.keys(by).forEach(k => { const a = by[k]; out[k] = { n: a.length, median: Math.round(median_(a) * 10) / 10, min: Math.min(...a), max: Math.max(...a) }; });
+  try { cache.put('hist1', JSON.stringify(out), 600); } catch (e) {}
+  return out;
+}
+/* 이 구간의 기준값: DB(3건 이상) → LOOKUP 기존 기록 → 없음 */
+function baseFor_(rk, a, b) {
+  let st = null; try { st = histStats_()[rk] || null; } catch (e) {}
+  if (st && st.n >= MIN_N) return { ...st, src: 'DB' };
+  let seed = 0; try {
+    const t = lookupTable_(), home = n => { const v = t[norm_(n)]; return v && v.kind === '자사'; };
+    const other = a.lk && home(a.lk) ? b.lk : b.lk && home(b.lk) ? a.lk : '';
+    if (other) seed = (t[norm_(other)] || {}).km || 0;
+  } catch (e) {}
+  if (seed) return { n: st ? st.n : 0, median: seed, min: seed, max: seed, src: '기존 기록' };
+  return st ? { ...st, src: 'DB(표본 부족)' } : null;
+}
+/* 제출된 주행기록 저장 */
+function recordTrips_(b) {
+  const rows = (b.rows || []).filter(r => r && (r.from || r.to)).slice(0, 200);
+  if (!rows.length) return { saved: 0 };
+  const now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss'), who = b.who || {};
+  const s = v => String(v == null ? '' : v).slice(0, 200), n = v => Number(v) || '';
+  const values = rows.map(r => [now, s(r.date), s(who.name), s(who.dept), s(r.from), s(r.to), s(r.fromLabel), s(r.toLabel),
+    s(r.routeKey), n(r.apiKm), n(r.km), r.rt ? 'Y' : 'N', s(r.proj), s(r.verdict || '정상'), s(r.reason), s(r.via)]);
+  const sh = histSheet_();
+  sh.getRange(sh.getLastRow() + 1, 1, values.length, HIST_HEAD.length).setValues(values);
+  CacheService.getScriptCache().remove('hist1');
+  return { saved: values.length };
+}
+/* 진단: 구간별 통계 로그 */
+function testHistory() {
+  CacheService.getScriptCache().remove('hist1');
+  const st = histStats_();
+  Logger.log(`구간 ${Object.keys(st).length}개`);
+  Object.keys(st).forEach(k => Logger.log(`${k} → 중앙값 ${st[k].median}km (${st[k].n}건, ${st[k].min}~${st[k].max})`));
 }
 
 /* ───── 3. 영수증 OCR: 이미지·PDF, 한 장에 여러 건 ───── */

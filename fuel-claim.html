@@ -55,6 +55,8 @@ tfoot td{font-weight:700;border-bottom:none;border-top:2px solid var(--ink)}
 .pill.new{background:var(--accent-soft);color:var(--accent)}
 .pill.ai{color:var(--ok)}
 .pill.dup{background:var(--warn);color:var(--paper)}
+.pill.base{background:var(--chip);color:var(--ink)}
+.reason{margin-top:4px;border-color:var(--warn)}
 .row-actions{display:flex;gap:4px}
 .row-actions button{padding:4px 7px;font-size:12px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -236,6 +238,20 @@ function renderHead(){
 }
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
+// ───── 거리 점검: 주행이력 DB 기준값(중앙값)·API 거리와 비교 ─────
+// 기준: |값 − 기준| > max(기준 × 15%, 5km) 이면 경고. 경고 행은 사유를 입력해야 제출됩니다.
+const TOL=x=>Math.max(x*0.15,5);
+function judge(t){
+  const km=+t.km||0,api=+t.apiKm||0,b=t.base,f=[];
+  if(!km)return{flags:f,msg:[]};
+  const msg=[],ref=b&&(b.src==="DB"||b.src==="기존 기록")?+b.median:0;
+  if(!api){f.push("미계산");msg.push("‘거리’로 계산하지 않은 수기 KM");}
+  if(ref&&api&&Math.abs(api-ref)>TOL(ref)){f.push("지도 편차");msg.push(`지도 ${api}km vs ${b.src} ${ref}km`);}
+  if(ref&&Math.abs(km-ref)>TOL(ref)){f.push("DB 편차");msg.push(`신청 ${km}km vs ${b.src} ${ref}km`);}
+  if(api&&Math.abs(km-api)>TOL(api)){f.push("신청 편차");msg.push(`신청 ${km}km vs 지도 ${api}km`);}
+  return{flags:f,msg};
+}
+const verdictOf=t=>{const j=judge(t);return j.flags.length?"경고: "+j.flags.join("·"):"정상"};
 function renderTrips(){
   const ml=masterList();
   $("#tripBody").innerHTML=S.trips.map(t=>`<tr data-id="${t.id}">
@@ -245,7 +261,11 @@ function renderTrips(){
     <td><input class="num" data-k="km" inputmode="decimal" value="${t.km??""}" aria-label="KM"></td>
     <td style="text-align:center"><input type="checkbox" data-k="rt" ${t.rt?"checked":""} aria-label="왕복" style="width:auto"></td>
     <td><input list="projList" data-k="proj" value="${esc(t.proj)}" aria-label="프로젝트명">
-      ${t.proj&&!ml.includes(t.proj)?'<span class="pill new">미등록</span>':""}${t.est?` <span class="pill ai" title="${esc((t.via?t.via+": ":"")+(t.hit||""))}">자동계산</span>`:""}${t.toll?` <span class="pill">예상통행료 ${won(t.toll)}</span>`:""}</td>
+      ${t.proj&&!ml.includes(t.proj)?'<span class="pill new">미등록</span>':""}${t.est?` <span class="pill ai" title="${esc((t.via?t.via+": ":"")+(t.hit||""))}">자동계산</span>`:""}${t.toll?` <span class="pill">예상통행료 ${won(t.toll)}</span>`:""}${(()=>{
+        const b=t.base,j=judge(t);let h="";
+        if(b&&b.median)h+=` <span class="pill base" title="${esc(b.src==="DB"?`최소 ${b.min} · 최대 ${b.max}km`:b.src)}">${b.src==="기존 기록"?"기존 기록":"DB 중앙"} ${b.median}km${b.n?`·${b.n}건`:""}</span>`;
+        if(j.flags.length)h+=` <span class="pill dup" title="${esc(j.msg.join(" / "))}">⚠ ${esc(j.flags.join("·"))}</span><input class="reason" data-k="reason" value="${esc(t.reason||"")}" placeholder="편차 사유 (필수)" aria-label="편차 사유">`;
+        return h;})()}</td>
     <td class="sum">${won(tripKm(t))}</td>
     <td><div class="row-actions"><button data-act="est" class="needs-ai" hidden title="출발지·도착지로 도로거리 계산">거리</button><button data-act="del" aria-label="행 삭제">삭제</button></div></td>
   </tr>`).join("");
@@ -294,10 +314,10 @@ function bindTable(body,list,after){
   body.addEventListener("change",e=>{const k=e.target.dataset.k;
     if(list==="trips"&&(k==="from"||k==="to")){            // 출발·도착이 바뀌면 이전 KM은 맞지 않으므로 비움
       const row=S.trips.find(r=>r.id==e.target.closest("tr").dataset.id);
-      if(row&&(+row.km||0)>0){row.km="";row.est=false;row.toll=0;row.hit="";after();
+      if(row&&(+row.km||0)>0){row.km="";row.est=false;row.toll=0;row.hit="";row.apiKm=0;row.base=null;row.routeKey="";row.reason="";after();
         $("#tripNote").className="note";$("#tripNote").textContent="출발지·도착지가 바뀌어 KM를 비웠습니다. ‘거리’를 눌러 다시 계산하세요.";}
       return;}
-    if(["proj","rt"].includes(k)||(list==="tolls"&&["date","time","gate","amt"].includes(k)))after()});
+    if(["proj","rt"].includes(k)||(list==="trips"&&k==="km")||(list==="tolls"&&["date","time","gate","amt"].includes(k)))after()});
   body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const tr=b.closest("tr"),id=+tr.dataset.id;
     if(b.dataset.act==="del"){S[list]=S[list].filter(r=>r.id!==id);after()}
     if(b.dataset.act==="est")estimate([S.trips.find(r=>r.id===id)],b)});
@@ -365,7 +385,8 @@ async function estimate(rows,btn){
   btn&&(btn.disabled=true);const n=$("#tripNote");n.className="note";n.textContent=`도로거리 계산 중… (${rows.length}건)`;
   const fails=[];
   for(const r of rows){
-    try{const j=await api({action:"distance",from:r.from,to:r.to});r.km=j.km;r.est=true;r.toll=j.toll;r.hit=`${j.fromLabel||r.from} → ${j.toLabel||r.to}`;r.via=j.source||"";}
+    try{const j=await api({action:"distance",from:r.from,to:r.to});r.km=j.km;r.apiKm=j.km;r.est=true;r.toll=j.toll;r.hit=`${j.fromLabel||r.from} → ${j.toLabel||r.to}`;r.via=j.source||"";
+      r.fromLabel=j.fromLabel||"";r.toLabel=j.toLabel||"";r.routeKey=j.routeKey||"";r.base=j.base||null;}
     catch(e){fails.push(`${r.from}→${r.to}: ${e.message}`)}
   }
   renderTrips();btn&&(btn.disabled=false);
@@ -469,9 +490,10 @@ const fname=()=>`유류대_지급신청서_${S.head.month||""}_${S.head.name||"�
 function buildWB(){
   const c=calc(),N=(v,f,z)=>({t:"n",v,...(f?{f}:{}),...(z?{z}:{})}),T=v=>({t:"s",v:String(v??"")});
   const nT=S.trips.length,nL=S.tolls.length;
-  const tr=[["사용일자","출발지","도착지","편도KM","왕복","적용KM","프로젝트명"].map(T),
-    ...S.trips.map((t,i)=>[T(t.date),T(t.from),T(t.to),N(+t.km||0),T(t.rt?"Y":"N"),N(tripKm(t),`D${i+2}*IF(E${i+2}="Y",2,1)`),T(t.proj)]),
-    [T("합계"),T(""),T(""),T(""),T(""),N(c.km,nT?`SUM(F2:F${nT+1})`:undefined),T("")]];
+  const tr=[["사용일자","출발지","도착지","편도KM","왕복","적용KM","프로젝트명","지도 편도KM","기준(중앙값)KM","기준 건수","판정","사유"].map(T),
+    ...S.trips.map((t,i)=>[T(t.date),T(t.from),T(t.to),N(+t.km||0),T(t.rt?"Y":"N"),N(tripKm(t),`D${i+2}*IF(E${i+2}="Y",2,1)`),T(t.proj),
+      t.apiKm?N(+t.apiKm):T(""),t.base&&t.base.median?N(+t.base.median):T(""),T(t.base?(t.base.src==="기존 기록"?"기존 기록":t.base.n+"건"):""),T(verdictOf(t)),T(t.reason||"")]),
+    [T("합계"),T(""),T(""),T(""),T(""),N(c.km,nT?`SUM(F2:F${nT+1})`:undefined),T(""),T(""),T(""),T(""),T(""),T("")]];
   const tl=[["일자","시각","톨게이트","구간","금액","근거"].map(T),
     ...S.tolls.map(t=>[T(t.date),T(t.time||""),T(t.gate),T(t.route),N(+t.amt||0,undefined,"#,##0"),T(t.src)]),
     [T("합계"),T(""),T(""),T(""),N(c.toll,nL?`SUM(E2:E${nL+1})`:undefined,"#,##0"),T("")]];
@@ -487,7 +509,7 @@ function buildWB(){
     [T("통행료"),N(c.toll,tollRef,"#,##0")],
     [T("지급 신청액"),N(c.all,"B16+B17","#,##0")]];
   const wb=XLSX.utils.book_new(),add=(rows,name,cols)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=cols.map(w=>({wch:w}));XLSX.utils.book_append_sheet(wb,ws,name)};
-  add(sh,"신청서",[30,22]);add(tr,"주행기록",[12,24,24,9,6,9,26]);add(tl,"통행료",[12,7,16,28,10,12]);
+  add(sh,"신청서",[30,22]);add(tr,"주행기록",[12,24,24,9,6,9,26,11,13,9,22,30]);add(tl,"통행료",[12,7,16,28,10,12]);
   return wb;
 }
 $("#xlsxBtn").onclick=()=>{
@@ -505,12 +527,18 @@ function mailHtml(){
   ${row("KM당 유류대",c.u.toFixed(1)+"원")}${row("총 주행거리",c.km.toLocaleString("ko-KR")+" km")}
   ${row("유류대",won(c.fuel)+"원")}${row("통행료",won(c.toll)+"원")}
   <tr><td ${td}><b>지급 신청액</b></td><td ${r}><b>${won(c.all)}원</b></td></tr></table>
+  ${(()=>{const w=S.trips.filter(t=>judge(t).flags.length);
+    return `<p><b>거리 점검</b>: 정상 ${S.trips.length-w.length}건 · 경고 ${w.length}건 (기준: 주행이력 중앙값 대비 ±15% 또는 ±5km)</p>`+
+      (w.length?`<table style="border-collapse:collapse">${w.map(t=>`<tr><td ${td}>${esc(t.date)}</td><td ${td}>${esc(t.from)} → ${esc(t.to)}</td><td ${td}>${esc(judge(t).msg.join(" / "))}</td><td ${td}>사유: ${esc(t.reason||"")}</td></tr>`).join("")}</table>`:"");})()}
   <p style="color:#666">상세 주행기록과 통행료 내역은 첨부 엑셀을 확인해 주세요.</p></div>`;
 }
 $("#mailBtn").onclick=async()=>{
   const n=$("#mailNote"),b=$("#mailBtn");n.className="note";
   if(!S.mail.to.trim()){n.className="note err";n.textContent="받는 사람 이메일을 입력하세요.";return}
   if(!window.XLSX){n.className="note err";n.textContent="엑셀 모듈을 불러오지 못했습니다.";return}
+  const noReason=S.trips.filter(t=>judge(t).flags.length&&!String(t.reason||"").trim());
+  if(noReason.length){n.className="note err";n.textContent=`거리 경고가 있는 ${noReason.length}건에 사유를 입력해야 보낼 수 있습니다. (주행기록의 ⚠ 표시 행)`;return}
+  if(!S.head.name.trim()){n.className="note err";n.textContent="신청자 성명을 입력하세요.";return}
   if(b.dataset.c!=="1"){b.dataset.c="1";b.textContent=`${S.mail.to} 로 보낼까요? 한 번 더 누르세요`;setTimeout(()=>{b.dataset.c="";b.textContent="메일로 보내기 (엑셀 첨부)"},4000);return}
   b.dataset.c="";b.textContent="메일로 보내기 (엑셀 첨부)";b.disabled=true;n.textContent="보내는 중…";
   try{
@@ -518,6 +546,11 @@ $("#mailBtn").onclick=async()=>{
     const j=await api(null,{action:"mail",to:S.mail.to,cc:S.mail.cc,replyTo:S.head.email,
       subject:`[유류대 지급신청] ${S.head.month} ${S.head.name} ${won(c.all)}원`,html:mailHtml(),xlsx,filename:fname()});
     n.textContent=`${j.sent}명에게 보냈습니다.`;
+    try{const rec=await api(null,{action:"record",who:{name:S.head.name,dept:S.head.dept},
+      rows:S.trips.map(t=>({date:t.date,from:t.from,to:t.to,fromLabel:t.fromLabel||"",toLabel:t.toLabel||"",routeKey:t.routeKey||"",
+        apiKm:+t.apiKm||0,km:+t.km||0,rt:!!t.rt,proj:t.proj,verdict:verdictOf(t),reason:t.reason||"",via:t.via||""}))});
+      n.textContent+=` 주행이력 ${rec.saved}건을 저장했습니다.`;}
+    catch(e){n.textContent+=` (주행이력 저장 실패: ${e.message})`;}
   }catch(e){n.className="note err";n.textContent=e.message}
   finally{b.disabled=!online}
 };
