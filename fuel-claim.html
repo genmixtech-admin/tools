@@ -306,14 +306,14 @@ $("#copyTsv").onclick=async()=>{
     ["유종","리터당가격","기준일","감가상각비","연비","KM당단가"].join("\t"),[FUEL[S.fuel].name,S.price,S.priceDate,S.dep,S.eff,u.toFixed(1)].join("\t"),"",
     ["사용일자","출발지","도착지","KM","왕복","적용KM","프로젝트명"].join("\t"),
     ...S.trips.map(t=>[t.date,t.from,t.to,t.km,t.rt?"Y":"N",tripKm(t),t.proj].join("\t")),"",
-    ["일자","구간","통행료","근거"].join("\t"),...S.tolls.map(t=>[t.date,t.route,t.amt,t.src].join("\t"))];
+    ["일자","톨게이트","구간","통행료","근거"].join("\t"),...S.tolls.map(t=>[t.date,t.gate,t.route,t.amt,t.src].join("\t"))];
   const txt=L.join("\n"),b=$("#copyTsv");
   try{await navigator.clipboard.writeText(txt);b.textContent="복사됨";}
   catch(e){const ta=document.createElement("textarea");ta.value=txt;document.body.append(ta);ta.select();try{document.execCommand("copy");b.textContent="복사됨"}catch(_){b.textContent="복사 실패"}ta.remove();}
   setTimeout(()=>b.textContent="표 복사 (시트 붙여넣기용)",2000);
 };
 
-// 백엔드(Apps Script 웹앱) 연동: 오피넷 경기 평균가 · 네이버 거리 · 영수증 OCR
+// 백엔드(Apps Script 웹앱) 연동: 오피넷 경기 평균가 · 도로거리 · 영수증 OCR
 const CFG_KEY="fuelClaim.cfg";
 const DEFAULT_URL="https://script.google.com/macros/s/AKfycbwOATfiGNy8h723AdjMLYtwWLTacuQSe_8FLYd_beK-Rbe87hkAqse21ohF60IRfZZp/exec";
 let CFG={url:"",token:""};try{CFG=JSON.parse(localStorage.getItem(CFG_KEY))||CFG}catch(e){}
@@ -355,7 +355,7 @@ $("#cfgSave").onclick=async()=>{
 
 async function estimate(rows,btn){
   rows=rows.filter(r=>r&&r.from&&r.to);if(!rows.length){$("#tripNote").textContent="출발지와 도착지를 먼저 입력하세요.";return}
-  btn&&(btn.disabled=true);const n=$("#tripNote");n.className="note";n.textContent=`네이버 경로 거리 계산 중… (${rows.length}건)`;
+  btn&&(btn.disabled=true);const n=$("#tripNote");n.className="note";n.textContent=`도로거리 계산 중… (${rows.length}건)`;
   const fails=[];
   for(const r of rows){
     try{const j=await api({action:"distance",from:r.from,to:r.to});r.km=j.km;r.est=true;r.toll=j.toll;r.hit=`${j.fromLabel||r.from} → ${j.toLabel||r.to}`;r.via=j.source||"";}
