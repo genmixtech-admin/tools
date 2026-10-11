@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>유류대 지급신청서</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 서식(form) 한 장 — 상단 기준값 띠, 가운데 주행·통행료 원장, 하단 고정 합계 */
+:root{
+  --bg:#f3f4f2; --paper:#ffffff; --ink:#1d2321; --muted:#5f6b67; --line:#d6dbd8;
+  --accent:#b8660b; --accent-soft:#fbefe0; --ok:#2f7a4f; --warn:#a33d2b; --chip:#eef1ef;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141817; --paper:#1c2120; --ink:#e7ebe9; --muted:#9aa6a1; --line:#2f3634;
+  --accent:#e59a45; --accent-soft:#3a2a17; --ok:#5fbf86; --warn:#ec7a66; --chip:#252b29; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141817; --paper:#1c2120; --ink:#e7ebe9; --muted:#9aa6a1; --line:#2f3634;
+  --accent:#e59a45; --accent-soft:#3a2a17; --ok:#5fbf86; --warn:#ec7a66; --chip:#252b29; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:16px;padding-block:24px 120px;display:grid;gap:20px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:10px}
+h1{margin:0;font-size:24px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.doc-no{font-family:var(--mono);font-size:12px;color:var(--muted)}
+h2{margin:0;font-size:15px;font-weight:700;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+h2 small{font-weight:400;color:var(--muted);font-size:12px}
+.sec{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:14px;min-width:0}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+label.f{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+label.f span{letter-spacing:.02em}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:7px 8px;width:100%;min-width:0}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+input.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.fuel{display:flex;gap:6px;flex-wrap:wrap}
+.fuel button{flex:1 1 80px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--chip);color:var(--ink);border-radius:4px;padding:7px 12px}
+button:hover{border-color:var(--ink)}
+button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+button.ghost{background:transparent}
+button:disabled{opacity:.5;cursor:default}
+.formula{font-family:var(--mono);font-size:13px;background:var(--accent-soft);border-radius:4px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.formula b{font-size:18px;color:var(--accent)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:820px}
+th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:middle}
+th{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.04em;white-space:nowrap}
+td input{padding:5px 6px}
+td.n,th.n{text-align:right}
+td.sum{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+tfoot td{font-weight:700;border-bottom:none;border-top:2px solid var(--ink)}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.pill.new{background:var(--accent-soft);color:var(--accent)}
+.pill.ai{color:var(--ok)}
+.row-actions{display:flex;gap:4px}
+.row-actions button{padding:4px 7px;font-size:12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.note{font-size:12px;color:var(--muted)}
+.note.err{color:var(--warn)}
+.drop{border:1.5px dashed var(--line);border-radius:6px;padding:16px;text-align:center;color:var(--muted);font-size:13px}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+details summary{cursor:pointer;font-size:13px;font-weight:500}
+textarea{min-height:120px;font-family:var(--mono);font-size:12px}
+.total{position:fixed;left:0;right:0;bottom:0;background:var(--ink);color:var(--paper);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+.total-in{max-width:1080px;margin:0 auto;display:flex;flex-wrap:wrap;gap:6px 22px;align-items:baseline;justify-content:space-between}
+.total .k{font-size:11px;opacity:.7;letter-spacing:.04em}
+.total .v{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
+.total .grand .v{font-size:22px;color:var(--accent)}
+.kv{display:grid;gap:0}
+@media (max-width:600px){.total .v{font-size:13px}.total .grand .v{font-size:18px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+body{margin:0}
+.conn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dot.ok{background:var(--ok)}.dot.err{background:var(--warn)}
+</style></head><body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="doc-no" id="docNo">유류대 지급신청서</div>
+      <h1>개인차량 업무사용 유류대 지급신청</h1>
+    </div>
+    <div class="bar">
+      <span class="conn"><span class="dot" id="connDot"></span><span id="connTxt">미연결</span></span>
+      <button id="copyTsv">표 복사 (시트 붙여넣기용)</button>
+      <button class="ghost" id="resetAll">새 신청서</button>
+    </div>
+  </header>
+
+  <details class="sec" id="setBox">
+    <summary>연결 설정 (최초 1회)</summary>
+    <p class="note">담당자에게 받은 <b>접속 토큰</b>만 입력하면 됩니다. 오피넷 경기 평균가, 거리 계산, 영수증 인식, 메일 송부가 켜집니다. 토큰은 이 브라우저에만 저장됩니다.</p>
+    <div class="grid">
+      <label class="f"><span>접속 토큰</span><input id="cfgTok" type="password" autocomplete="off" placeholder="담당자에게 받은 토큰"></label>
+    </div>
+    <details><summary class="note">고급: 백엔드 주소 변경</summary>
+      <label class="f"><span>웹앱 URL (비워두면 기본 주소 사용)</span><input id="cfgUrl" placeholder="기본 주소 사용"></label>
+    </details>
+    <div class="bar"><button class="pri" id="cfgSave">저장 후 연결 확인</button><span class="note" id="cfgNote"></span></div>
+  </details>
+
+  <section class="sec">
+    <h2>신청자</h2>
+    <div class="grid">
+      <label class="f"><span>성명</span><input id="hName" placeholder="홍길동"></label>
+      <label class="f"><span>소속</span><input id="hDept" placeholder="사업개발팀"></label>
+      <label class="f"><span>차량번호</span><input id="hCar" placeholder="12가 3456"></label>
+      <label class="f"><span>신청월</span><input id="hMonth" type="month"></label>
+      <label class="f"><span>신청자 이메일 (회신용)</span><input id="hEmail" type="email" placeholder="name@genmixtech.com"></label>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>1~5. 단가 기준 (오피넷 경기 평균) <small>KM당 유류대 = (리터당 가격 + 리터당 감가상각비) ÷ 연비</small></h2>
+    <div class="fuel" role="group" aria-label="유종">
+      <button data-fuel="gasoline">휘발유</button>
+      <button data-fuel="diesel">경유</button>
+      <button data-fuel="lpg">LPG</button>
+    </div>
+    <div class="grid">
+      <label class="f"><span>리터당 가격 (원)</span><input id="price" class="num" inputmode="decimal"></label>
+      <label class="f"><span>가격 기준일</span><input id="priceDate" type="date"></label>
+      <label class="f"><span>리터당 감가상각비 (원)</span><input id="dep" class="num" inputmode="decimal"></label>
+      <label class="f"><span>연비 (km/L)</span><input id="eff" class="num" inputmode="decimal"></label>
+    </div>
+    <div class="bar"><button id="fetchPrice">오피넷 경기 평균가 불러오기</button><span class="note" id="priceNote">규정: 지출결의서 작성일 기준 오피넷 경기 평균가</span></div>
+    <div class="formula" id="formula"></div>
+  </section>
+
+  <section class="sec">
+    <h2>6. 주행기록 <small>왕복 체크 시 거리 ×2</small></h2>
+    <div class="tbl">
+      <table>
+        <thead><tr>
+          <th style="width:125px">사용일자</th><th>출발지</th><th>도착지</th>
+          <th class="n" style="width:90px">KM</th><th style="width:48px">왕복</th>
+          <th style="width:200px">프로젝트명</th><th class="n" style="width:80px">적용 KM</th><th style="width:96px"></th>
+        </tr></thead>
+        <tbody id="tripBody"></tbody>
+        <tfoot><tr><td colspan="6">합계 거리</td><td class="sum" id="kmSum">0</td><td></td></tr></tfoot>
+      </table>
+    </div>
+    <div class="bar">
+      <button id="addTrip">+ 주행 추가</button>
+      <button id="estAll" hidden>빈 거리 일괄 계산</button>
+      <span class="note" id="tripNote"></span>
+    </div>
+    <datalist id="projList"></datalist>
+    <details>
+      <summary>프로젝트 MASTER DB (한 줄에 하나)</summary>
+      <p class="note">여기 있는 이름은 주행기록에서 자동완성됩니다. 목록에 없는 이름도 입력할 수 있고, 그 행에는 <span class="pill new">미등록</span> 표시가 붙습니다.</p>
+      <textarea id="master" aria-label="프로젝트 MASTER"></textarea>
+    </details>
+  </section>
+
+  <section class="sec">
+    <h2>7. 통행료</h2>
+    <div class="drop" id="drop" hidden>
+      통행료 영수증(사진·PDF)을 여기에 끌어다 놓거나 <label style="color:var(--accent);cursor:pointer;text-decoration:underline">파일 선택<input type="file" id="rcpt" accept="image/*,application/pdf,.pdf" multiple hidden></label> · 사진은 붙여넣기(Ctrl+V)도 됩니다
+      <div class="note" id="rcptNote"></div>
+      <details id="rawBox" hidden style="text-align:left;margin-top:8px"><summary>인식 원문 보기</summary><textarea id="rawText" readonly aria-label="인식 원문"></textarea></details>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr>
+          <th style="width:125px">일자</th><th style="width:170px">톨게이트</th><th>구간 (수기)</th><th class="n" style="width:110px">금액 (원)</th>
+          <th style="width:110px">근거</th><th style="width:60px"></th>
+        </tr></thead>
+        <tbody id="tollBody"></tbody>
+        <tfoot><tr><td colspan="3">통행료 합계</td><td class="sum" id="tollSum">0</td><td colspan="2"></td></tr></tfoot>
+      </table>
+    </div>
+    <div class="bar"><button id="addToll">+ 통행료 추가</button></div>
+  </section>
+
+  <section class="sec">
+    <h2>8. 내보내기 · 메일 송부</h2>
+    <div class="grid">
+      <label class="f"><span>받는 사람 (쉼표로 여러 명)</span><input id="mTo" type="text" inputmode="email" placeholder="finance@genmixtech.com"></label>
+      <label class="f"><span>참조 (선택)</span><input id="mCc" type="text" inputmode="email"></label>
+    </div>
+    <label class="f"><span>메모 (선택)</span><input id="mMemo" placeholder="10월 유류대 신청드립니다."></label>
+    <div class="bar">
+      <button id="xlsxBtn">엑셀 내보내기</button>
+      <button class="pri" id="mailBtn" disabled>메일로 보내기 (엑셀 첨부)</button>
+      <span class="note" id="mailNote"></span>
+    </div>
+  </section>
+</div>
+
+<div class="total" role="status" aria-live="polite">
+  <div class="total-in">
+    <div class="kv"><span class="k">총 거리</span><span class="v" id="tKm">0 km</span></div>
+    <div class="kv"><span class="k">KM당 단가</span><span class="v" id="tUnit">0원</span></div>
+    <div class="kv"><span class="k">유류대</span><span class="v" id="tFuel">0원</span></div>
+    <div class="kv"><span class="k">통행료</span><span class="v" id="tToll">0원</span></div>
+    <div class="kv grand"><span class="k">지급 신청액</span><span class="v" id="tAll">0원</span></div>
+  </div>
+</div>
+
+<script>
+const FUEL={gasoline:{name:"휘발유",price:0,eff:10},diesel:{name:"경유",price:0,eff:12},lpg:{name:"LPG",price:0,eff:7}};
+const KEY="fuelClaim.v3";
+const $=s=>document.querySelector(s);
+const won=n=>Math.round(n).toLocaleString("ko-KR");
+const today=()=>new Date().toISOString().slice(0,10);
+let S;
+
+function sample0(){return{
+  head:{name:"",dept:"",car:"",email:"",month:new Date().toISOString().slice(0,7)},
+  fuel:"gasoline",price:FUEL.gasoline.price,priceDate:"",gg:null,dep:700,eff:FUEL.gasoline.eff,
+  master:"[예시] 스마트팩토리 구축\n[예시] QMS 인증 대응\n[예시] 신규 거래처 발굴",
+  trips:[
+    {id:1,date:today(),from:"서울 본사",to:"평택 고객사",km:68,rt:true,proj:"[예시] 스마트팩토리 구축",est:false},
+    {id:2,date:today(),from:"서울 본사",to:"화성 협력사",km:52,rt:false,proj:"[예시] 협력사 감사",est:false}],
+  tolls:[{id:3,date:today(),gate:"[예시] 서울",route:"서울 본사 → 평택 고객사",amt:2900,src:"수기"}],
+  mail:{to:"",cc:"",memo:""},
+  seq:4};}
+function load(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r)}catch(e){}return sample0()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+S=load();
+
+const unit=()=>{const p=+S.price||0,d=+S.dep||0,e=+S.eff||0;return e>0?(p+d)/e:0};
+const tripKm=t=>(+t.km||0)*(t.rt?2:1);
+const masterList=()=>S.master.split("\n").map(s=>s.trim()).filter(Boolean);
+
+function renderHead(){
+  $("#hName").value=S.head.name;$("#hDept").value=S.head.dept;$("#hCar").value=S.head.car;$("#hMonth").value=S.head.month;$("#hEmail").value=S.head.email||"";S.mail=S.mail||{to:"",cc:"",memo:""};$("#mTo").value=S.mail.to;$("#mCc").value=S.mail.cc;$("#mMemo").value=S.mail.memo;
+  document.querySelectorAll("[data-fuel]").forEach(b=>b.classList.toggle("on",b.dataset.fuel===S.fuel));
+  $("#price").value=S.price;$("#priceDate").value=S.priceDate;$("#dep").value=S.dep;$("#eff").value=S.eff;$("#master").value=S.master;
+  $("#projList").innerHTML=masterList().map(p=>`<option value="${esc(p)}">`).join("");
+}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+function renderTrips(){
+  const ml=masterList();
+  $("#tripBody").innerHTML=S.trips.map(t=>`<tr data-id="${t.id}">
+    <td><input type="date" data-k="date" value="${esc(t.date)}" aria-label="사용일자"></td>
+    <td><input data-k="from" value="${esc(t.from)}" aria-label="출발지"></td>
+    <td><input data-k="to" value="${esc(t.to)}" aria-label="도착지"></td>
+    <td><input class="num" data-k="km" inputmode="decimal" value="${t.km??""}" aria-label="KM"></td>
+    <td style="text-align:center"><input type="checkbox" data-k="rt" ${t.rt?"checked":""} aria-label="왕복" style="width:auto"></td>
+    <td><input list="projList" data-k="proj" value="${esc(t.proj)}" aria-label="프로젝트명">
+      ${t.proj&&!ml.includes(t.proj)?'<span class="pill new">미등록</span>':""}${t.est?` <span class="pill ai" title="${esc(t.hit||"")}">네이버</span>`:""}${t.toll?` <span class="pill">예상통행료 ${won(t.toll)}</span>`:""}</td>
+    <td class="sum">${won(tripKm(t))}</td>
+    <td><div class="row-actions"><button data-act="est" class="needs-ai" hidden title="네이버 지도로 도로거리 계산">거리</button><button data-act="del" aria-label="행 삭제">삭제</button></div></td>
+  </tr>`).join("");
+  aiToggle();totals();
+}
+function renderTolls(){
+  $("#tollBody").innerHTML=S.tolls.map(t=>`<tr data-id="${t.id}">
+    <td><input type="date" data-k="date" value="${esc(t.date)}" aria-label="일자"></td>
+    <td><input data-k="gate" value="${esc(t.gate)}" aria-label="톨게이트"></td>
+    <td><input data-k="route" value="${esc(t.route)}" aria-label="구간" placeholder="예: 본사 → 평택 고객사"></td>
+    <td><input class="num" data-k="amt" inputmode="numeric" value="${t.amt??""}" aria-label="금액"></td>
+    <td><span class="pill ${t.src==="수기"?"":"ai"}" title="${esc(t.file||"")}">${esc(t.src)}</span></td>
+    <td><div class="row-actions"><button data-act="del" aria-label="행 삭제">삭제</button></div></td>
+  </tr>`).join("");
+  totals();
+}
+function totals(){
+  const km=S.trips.reduce((a,t)=>a+tripKm(t),0),u=unit(),fuel=Math.floor(km*u),toll=S.tolls.reduce((a,t)=>a+(+t.amt||0),0);
+  $("#kmSum").textContent=won(km);$("#tollSum").textContent=won(toll);
+  $("#tKm").textContent=km.toLocaleString("ko-KR")+" km";$("#tUnit").textContent=u.toFixed(1)+"원";
+  $("#tFuel").textContent=won(fuel)+"원";$("#tToll").textContent=won(toll)+"원";$("#tAll").textContent=won(fuel+toll)+"원";
+  $("#formula").innerHTML=`<span>(${won(+S.price||0)} + ${won(+S.dep||0)}) ÷ ${S.eff||0} km/L =</span> <b>${u.toFixed(1)}원/km</b> <span>· 유류대 = ${km.toLocaleString("ko-KR")} km × ${u.toFixed(1)} = ${won(fuel)}원 (원 미만 절사)</span>`;
+  const m=S.head.month||"";$("#docNo").textContent=`유류대 지급신청서 · ${m} · ${FUEL[S.fuel].name}`;
+  save();
+}
+
+// 이벤트: 헤더/기준값
+[["#hName","name"],["#hDept","dept"],["#hCar","car"],["#hMonth","month"],["#hEmail","email"]].forEach(([s,k])=>$(s).addEventListener("input",e=>{S.head[k]=e.target.value;totals()}));
+[["#price","price"],["#priceDate","priceDate"],["#dep","dep"],["#eff","eff"]].forEach(([s,k])=>$(s).addEventListener("input",e=>{S[k]=e.target.value;totals()}));
+document.querySelectorAll("[data-fuel]").forEach(b=>b.addEventListener("click",()=>{
+  S.fuel=b.dataset.fuel;S.price=S.gg?.prices?.[S.fuel]??FUEL[S.fuel].price;if(S.gg?.prices?.[S.fuel])S.priceDate=S.gg.date;S.eff=FUEL[S.fuel].eff;renderHead();totals();}));
+$("#master").addEventListener("change",e=>{S.master=e.target.value;renderHead();renderTrips()});
+
+// 이벤트: 표
+function bindTable(body,list,after){
+  body.addEventListener("input",e=>{const tr=e.target.closest("tr"),k=e.target.dataset.k;if(!tr||!k)return;
+    const row=S[list].find(r=>r.id==tr.dataset.id);row[k]=e.target.type==="checkbox"?e.target.checked:e.target.value;
+    if(k==="km")row.est=false;
+    if(list==="trips")tr.querySelector("td.sum").textContent=won(tripKm(row));totals();});
+  body.addEventListener("change",e=>{if(["proj","rt"].includes(e.target.dataset.k))after()});
+  body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const tr=b.closest("tr"),id=+tr.dataset.id;
+    if(b.dataset.act==="del"){S[list]=S[list].filter(r=>r.id!==id);after()}
+    if(b.dataset.act==="est")estimate([S.trips.find(r=>r.id===id)],b)});
+}
+bindTable($("#tripBody"),"trips",renderTrips);bindTable($("#tollBody"),"tolls",renderTolls);
+$("#addTrip").onclick=()=>{const last=S.trips.at(-1);S.trips.push({id:S.seq++,date:last?.date||today(),from:last?.to||"",to:"",km:"",rt:false,proj:last?.proj||"",est:false});renderTrips()};
+$("#addToll").onclick=()=>{S.tolls.push({id:S.seq++,date:today(),gate:"",route:"",amt:"",src:"수기"});renderTolls()};
+$("#resetAll").onclick=()=>{const b=$("#resetAll");if(b.dataset.c){S=sample0();S.trips=[];S.tolls=[];S.master=masterList().join("\n");renderHead();renderTrips();renderTolls();b.textContent="새 신청서";delete b.dataset.c}else{b.dataset.c=1;b.textContent="한 번 더 누르면 비웁니다";setTimeout(()=>{b.textContent="새 신청서";delete b.dataset.c},3000)}};
+
+// 시트 붙여넣기용 TSV
+$("#copyTsv").onclick=async()=>{
+  const u=unit(),L=[["유류대 지급신청서",S.head.month,S.head.name,S.head.dept,S.head.car].join("\t"),
+    ["유종","리터당가격","기준일","감가상각비","연비","KM당단가"].join("\t"),[FUEL[S.fuel].name,S.price,S.priceDate,S.dep,S.eff,u.toFixed(1)].join("\t"),"",
+    ["사용일자","출발지","도착지","KM","왕복","적용KM","프로젝트명"].join("\t"),
+    ...S.trips.map(t=>[t.date,t.from,t.to,t.km,t.rt?"Y":"N",tripKm(t),t.proj].join("\t")),"",
+    ["일자","구간","통행료","근거"].join("\t"),...S.tolls.map(t=>[t.date,t.route,t.amt,t.src].join("\t"))];
+  const txt=L.join("\n"),b=$("#copyTsv");
+  try{await navigator.clipboard.writeText(txt);b.textContent="복사됨";}
+  catch(e){const ta=document.createElement("textarea");ta.value=txt;document.body.append(ta);ta.select();try{document.execCommand("copy");b.textContent="복사됨"}catch(_){b.textContent="복사 실패"}ta.remove();}
+  setTimeout(()=>b.textContent="표 복사 (시트 붙여넣기용)",2000);
+};
+
+// 백엔드(Apps Script 웹앱) 연동: 오피넷 경기 평균가 · 네이버 거리 · 영수증 OCR
+const CFG_KEY="fuelClaim.cfg";
+const DEFAULT_URL="https://script.google.com/macros/s/AKfycbwOATfiGNy8h723AdjMLYtwWLTacuQSe_8FLYd_beK-Rbe87hkAqse21ohF60IRfZZp/exec";
+let CFG={url:"",token:""};try{CFG=JSON.parse(localStorage.getItem(CFG_KEY))||CFG}catch(e){}
+const apiUrl=()=>CFG.url||DEFAULT_URL;
+let online=false,imgOK=false;
+function aiToggle(){document.querySelectorAll(".needs-ai").forEach(b=>b.hidden=!online);$("#estAll").hidden=!online;$("#drop").hidden=!online;$("#fetchPrice").disabled=!online;$("#mailBtn").disabled=!online;}
+function setConn(state,txt){$("#connDot").className="dot "+(state||"");$("#connTxt").textContent=txt;}
+async function api(params,body){
+  if(!CFG.token)throw new Error("연결 설정에서 접속 토큰을 입력하세요.");
+  let r;
+  if(body){r=await fetch(apiUrl(),{method:"POST",body:JSON.stringify({...body,token:CFG.token})});}
+  else{const q=new URLSearchParams({...params,token:CFG.token});r=await fetch(apiUrl()+"?"+q);}
+  const j=await r.json();if(!j.ok)throw new Error(j.error||"요청 실패");return j;
+}
+const NAME2KEY={"휘발유":"gasoline","경유":"diesel","LPG":"lpg"};
+async function fetchPrice(){
+  const n=$("#priceNote");n.className="note";n.textContent="오피넷 경기 평균가 불러오는 중…";
+  try{
+    const j=await api({action:"price"});
+    S.gg={date:j.date,prices:{}};
+    Object.entries(j.prices).forEach(([k,v])=>{if(NAME2KEY[k])S.gg.prices[NAME2KEY[k]]=v});
+    if(S.gg.prices[S.fuel]){S.price=S.gg.prices[S.fuel];S.priceDate=j.date;}
+    renderHead();totals();
+    n.textContent=`오피넷 ${j.region} 평균 (${j.date}) · 휘발유 ${won(j.prices["휘발유"]||0)} · 경유 ${won(j.prices["경유"]||0)} · LPG ${won(j.prices["LPG"]||0)}원`;
+    online=true;setConn("ok","연결됨");
+  }catch(e){n.className="note err";n.textContent=e.message;online=false;setConn("err","연결 오류");}
+  aiToggle();
+}
+$("#fetchPrice").onclick=fetchPrice;
+$("#cfgUrl").value=CFG.url===DEFAULT_URL?"":CFG.url;$("#cfgTok").value=CFG.token;
+$("#cfgSave").onclick=async()=>{
+  CFG={url:$("#cfgUrl").value.trim(),token:$("#cfgTok").value.trim()};
+  if(!CFG.token){$("#cfgNote").textContent="접속 토큰을 입력하세요.";return}
+  try{localStorage.setItem(CFG_KEY,JSON.stringify(CFG))}catch(e){}
+  $("#cfgNote").textContent="확인 중…";online=true;await fetchPrice();
+  $("#cfgNote").textContent=online&&$("#connDot").classList.contains("ok")?"연결되었습니다.":"연결하지 못했습니다. URL·토큰·배포 권한을 확인하세요.";
+  if($("#connDot").classList.contains("ok"))$("#setBox").open=false;
+};
+
+async function estimate(rows,btn){
+  rows=rows.filter(r=>r&&r.from&&r.to);if(!rows.length){$("#tripNote").textContent="출발지와 도착지를 먼저 입력하세요.";return}
+  btn&&(btn.disabled=true);const n=$("#tripNote");n.className="note";n.textContent=`네이버 경로 거리 계산 중… (${rows.length}건)`;
+  const fails=[];
+  for(const r of rows){
+    try{const j=await api({action:"distance",from:r.from,to:r.to});r.km=j.km;r.est=true;r.toll=j.toll;r.hit=`${j.fromLabel||r.from} → ${j.toLabel||r.to}`;}
+    catch(e){fails.push(`${r.from}→${r.to}: ${e.message}`)}
+  }
+  renderTrips();btn&&(btn.disabled=false);
+  if(fails.length){n.className="note err";n.textContent=fails.join(" / ")}
+  else n.textContent="네이버 지도 최적경로(편도) 기준입니다. 경로 예상 통행료는 행에 표시됩니다.";
+}
+$("#estAll").onclick=e=>estimate(S.trips.filter(t=>!(+t.km)),e.currentTarget);
+
+function shrink(file){return new Promise((res,rej)=>{const img=new Image(),url=URL.createObjectURL(file);
+  img.onload=()=>{const k=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement("canvas");
+    c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    URL.revokeObjectURL(url);res({name:file.name||"receipt.jpg",mime:"image/jpeg",data:c.toDataURL("image/jpeg",.85).split(",")[1]});};
+  img.onerror=()=>rej(new Error(`${file.name} 이미지를 열 수 없습니다.`));img.src=url;});}
+const asB64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name||"receipt.pdf",mime:f.type||"application/pdf",data:String(r.result).split(",")[1]});r.onerror=()=>rej(new Error(`${f.name}을(를) 읽을 수 없습니다.`));r.readAsDataURL(f);});
+async function readReceipts(files){
+  files=[...files].filter(f=>f.type.startsWith("image/")||f.type==="application/pdf"||/\.pdf$/i.test(f.name));if(!files.length)return;
+  const big=files.find(f=>f.size>15*1024*1024);const n=$("#rcptNote");
+  if(big){n.className="note err";n.textContent=`${big.name}이(가) 15MB를 넘습니다.`;return}
+  n.className="note";n.textContent=`영수증 ${files.length}개 인식 중… (PDF는 시간이 조금 더 걸립니다)`;
+  try{
+    const payload=await Promise.all(files.map(f=>f.type.startsWith("image/")?shrink(f):asB64(f)));
+    const j=await api(null,{action:"ocr",files:payload});
+    j.rows.forEach(o=>S.tolls.push({id:S.seq++,date:/^\d{4}-\d{2}-\d{2}$/.test(o.date)?o.date:today(),gate:o.gate||"",route:"",amt:+o.amount||"",src:/\.pdf$/i.test(o.file||"")?"PDF 인식":"영수증 인식",file:o.file}));
+    renderTolls();
+    const per=j.raws.map(r=>`${r.file} ${r.count}건`).join(" · ");
+    $("#rawText").value=j.raws.map(r=>`■ ${r.file} (${r.count}건)\n${r.text}`).join("\n\n");$("#rawBox").hidden=false;
+    n.textContent=`${j.rows.length}건 입력했습니다 (${per}). 톨게이트명·금액을 영수증과 대조하고 구간은 직접 입력하세요.`;
+    if(!j.rows.length){n.className="note err";n.textContent="인식된 통행료가 없습니다. ‘인식 원문 보기’에서 내용을 확인해 주세요.";}
+  }catch(e){n.className="note err";n.textContent=e.message}
+}
+$("#rcpt").addEventListener("change",e=>{readReceipts(e.target.files);e.target.value=""});
+const drop=$("#drop");
+["dragover","dragenter"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(t=>drop.addEventListener(t,()=>drop.classList.remove("over")));
+drop.addEventListener("drop",e=>{e.preventDefault();readReceipts(e.dataTransfer.files)});
+document.addEventListener("paste",e=>{if(!online)return;const f=[...(e.clipboardData?.files||[])];if(f.length)readReceipts(f)});
+
+// ───── 엑셀 내보내기 · 메일 ─────
+["mTo","mCc","mMemo"].forEach(id=>$("#"+id).addEventListener("input",e=>{S.mail[{mTo:"to",mCc:"cc",mMemo:"memo"}[id]]=e.target.value;save()}));
+function calc(){const km=S.trips.reduce((a,t)=>a+tripKm(t),0),u=unit(),fuel=Math.floor(km*u),toll=S.tolls.reduce((a,t)=>a+(+t.amt||0),0);return{km,u,fuel,toll,all:fuel+toll}}
+const fname=()=>`유류대_지급신청서_${S.head.month||""}_${S.head.name||"이름"}.xlsx`;
+function buildWB(){
+  const c=calc(),N=(v,f,z)=>({t:"n",v,...(f?{f}:{}),...(z?{z}:{})}),T=v=>({t:"s",v:String(v??"")});
+  const nT=S.trips.length,nL=S.tolls.length;
+  const tr=[["사용일자","출발지","도착지","편도KM","왕복","적용KM","프로젝트명"].map(T),
+    ...S.trips.map((t,i)=>[T(t.date),T(t.from),T(t.to),N(+t.km||0),T(t.rt?"Y":"N"),N(tripKm(t),`D${i+2}*IF(E${i+2}="Y",2,1)`),T(t.proj)]),
+    [T("합계"),T(""),T(""),T(""),T(""),N(c.km,nT?`SUM(F2:F${nT+1})`:undefined),T("")]];
+  const tl=[["일자","톨게이트","구간","금액","근거"].map(T),
+    ...S.tolls.map(t=>[T(t.date),T(t.gate),T(t.route),N(+t.amt||0,undefined,"#,##0"),T(t.src)]),
+    [T("합계"),T(""),T(""),N(c.toll,nL?`SUM(D2:D${nL+1})`:undefined,"#,##0"),T("")]];
+  const kmRef=`'주행기록'!F${nT+2}`,tollRef=`'통행료'!D${nL+2}`;
+  const sh=[[T("개인차량 유류대 지급신청서")],[],
+    [T("신청월"),T(S.head.month)],[T("성명"),T(S.head.name)],[T("소속"),T(S.head.dept)],[T("차량번호"),T(S.head.car)],[T("이메일"),T(S.head.email)],[],
+    [T("유종"),T(FUEL[S.fuel].name)],
+    [T("리터당 가격 (오피넷 경기 평균)"),N(+S.price||0,undefined,"#,##0.00")],[T("가격 기준일"),T(S.priceDate)],
+    [T("리터당 감가상각비"),N(+S.dep||0,undefined,"#,##0")],[T("연비 (km/L)"),N(+S.eff||0)],
+    [T("KM당 유류대"),N(c.u,"IF(B13=0,0,(B10+B12)/B13)","#,##0.0")],
+    [T("총 주행거리 (km)"),N(c.km,kmRef,"#,##0.0")],
+    [T("유류대 (원 미만 절사)"),N(c.fuel,"ROUNDDOWN(B15*B14,0)","#,##0")],
+    [T("통행료"),N(c.toll,tollRef,"#,##0")],
+    [T("지급 신청액"),N(c.all,"B16+B17","#,##0")]];
+  const wb=XLSX.utils.book_new(),add=(rows,name,cols)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=cols.map(w=>({wch:w}));XLSX.utils.book_append_sheet(wb,ws,name)};
+  add(sh,"신청서",[30,22]);add(tr,"주행기록",[12,24,24,9,6,9,26]);add(tl,"통행료",[12,16,28,10,12]);
+  return wb;
+}
+$("#xlsxBtn").onclick=()=>{
+  if(!window.XLSX){$("#mailNote").className="note err";$("#mailNote").textContent="엑셀 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요.";return}
+  XLSX.writeFile(buildWB(),fname());$("#mailNote").className="note";$("#mailNote").textContent="엑셀 파일을 저장했습니다.";
+};
+function mailHtml(){
+  const c=calc(),td='style="border:1px solid #ccc;padding:4px 8px"',r='style="border:1px solid #ccc;padding:4px 8px;text-align:right"';
+  const row=(k,v)=>`<tr><td ${td}>${esc(k)}</td><td ${r}>${esc(v)}</td></tr>`;
+  return `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px">
+  <p>${esc(S.mail.memo||"유류대 지급신청서를 송부드립니다.")}</p>
+  <table style="border-collapse:collapse">
+  ${row("신청월",S.head.month)}${row("신청자",`${S.head.name} / ${S.head.dept} / ${S.head.car}`)}
+  ${row("유종",FUEL[S.fuel].name)}${row("리터당 가격 (오피넷 경기 평균, "+(S.priceDate||"-")+")",won(+S.price||0)+"원")}
+  ${row("KM당 유류대",c.u.toFixed(1)+"원")}${row("총 주행거리",c.km.toLocaleString("ko-KR")+" km")}
+  ${row("유류대",won(c.fuel)+"원")}${row("통행료",won(c.toll)+"원")}
+  <tr><td ${td}><b>지급 신청액</b></td><td ${r}><b>${won(c.all)}원</b></td></tr></table>
+  <p style="color:#666">상세 주행기록과 통행료 내역은 첨부 엑셀을 확인해 주세요.</p></div>`;
+}
+$("#mailBtn").onclick=async()=>{
+  const n=$("#mailNote"),b=$("#mailBtn");n.className="note";
+  if(!S.mail.to.trim()){n.className="note err";n.textContent="받는 사람 이메일을 입력하세요.";return}
+  if(!window.XLSX){n.className="note err";n.textContent="엑셀 모듈을 불러오지 못했습니다.";return}
+  if(b.dataset.c!=="1"){b.dataset.c="1";b.textContent=`${S.mail.to} 로 보낼까요? 한 번 더 누르세요`;setTimeout(()=>{b.dataset.c="";b.textContent="메일로 보내기 (엑셀 첨부)"},4000);return}
+  b.dataset.c="";b.textContent="메일로 보내기 (엑셀 첨부)";b.disabled=true;n.textContent="보내는 중…";
+  try{
+    const c=calc(),xlsx=XLSX.write(buildWB(),{type:"base64",bookType:"xlsx"});
+    const j=await api(null,{action:"mail",to:S.mail.to,cc:S.mail.cc,replyTo:S.head.email,
+      subject:`[유류대 지급신청] ${S.head.month} ${S.head.name} ${won(c.all)}원`,html:mailHtml(),xlsx,filename:fname()});
+    n.textContent=`${j.sent}명에게 보냈습니다.`;
+  }catch(e){n.className="note err";n.textContent=e.message}
+  finally{b.disabled=!online}
+};
+
+renderHead();renderTrips();renderTolls();aiToggle();
+if(CFG.token){online=true;fetchPrice();}else{setConn("","미연결");$("#setBox").open=true;}
+</script>
+</body></html>
