@@ -382,6 +382,7 @@ async function readReceipts(files){
     const payload=await Promise.all(files.map(f=>f.type.startsWith("image/")?shrink(f):asB64(f)));
     const j=await api(null,{action:"ocr",files:payload});
     j.rows.forEach(o=>S.tolls.push({id:S.seq++,date:/^\d{4}-\d{2}-\d{2}$/.test(o.date)?o.date:today(),gate:o.gate||"",route:"",amt:+o.amount||"",src:/\.pdf$/i.test(o.file||"")?"PDF 인식":"영수증 인식",file:o.file}));
+    S.tolls.sort((a,b)=>String(a.date).localeCompare(String(b.date)));   // 일자 오름차순 (같은 날은 읽은 순서 유지)
     renderTolls();
     const per=j.raws.map(r=>`${r.file} ${r.count}건`).join(" · ");
     $("#rawText").value=j.raws.map(r=>`■ ${r.file} (${r.count}건)\n${r.text}`).join("\n\n");$("#rawBox").hidden=false;
