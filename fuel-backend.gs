@@ -1,5 +1,5 @@
 /**
- * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v6 (영수증: 공급가액+부가세=총액 관계로 금액 인식)
+ * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v7 (영수증: 총액만 반영, 공급가액·부가세 행 제외)
  *  - API 키는 "스크립트 속성"에만 보관합니다. HTML에는 키가 들어가지 않습니다.
  *
  * 스크립트 속성
@@ -48,7 +48,7 @@ function authorize() {
 /* ───── 라우팅 ───── */
 function doGet(e) {
   try {
-    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v6)' });
+    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v7)' });
     const te = tokenError_(e.parameter.token); if (te) return out({ ok: false, error: te });
     switch (e.parameter.action) {
       case 'price':    return out({ ok: true, ...gyeonggiPrice_() });
@@ -201,7 +201,7 @@ function ocrFiles_(files) {
   files.forEach(f => {
     const blob = Utilities.newBlob(Utilities.base64Decode(f.data), f.mime || 'image/jpeg', f.name || 'receipt');
     const text = ocr_(blob);
-    const found = parseTolls_(text).map(r => ({ ...r, file: f.name }));
+    const found = dropSupplyRows_(parseTolls_(text)).map(r => ({ ...r, file: f.name }));
     rows.push(...found);
     raws.push({ file: f.name, count: found.length, text: text.slice(0, 4000) });
   });
@@ -341,6 +341,26 @@ function parseVatTriples_(text) {
     amount: f.total, supply: f.supply, vat: f.vat }));
 }
 
+/* 공급가액(또는 부가세)이 별도 통행료 행으로 잡힌 것을 제거합니다. 실제 낸 금액(총액)만 남깁니다.
+ *  - 다른 행 금액이 이 행 금액의 약 1.1배(= 공급가액 + 10%)이면 → 이 행은 공급가액이므로 제외
+ *  - 다른 행 금액의 약 1/11(= 부가세)이면 → 이 행은 부가세이므로 제외
+ *  - 짝이 없더라도 10원 단위가 아닌 금액은 통행료가 아니므로(공급가액) 제외
+ *  - 100원 단위 금액은 실제 통행료로 보고 항상 유지 (같은 날 1,000원·1,100원 두 곳을 지난 경우 보호)
+ *  같은 날짜끼리만 비교합니다(날짜가 비어 있으면 모두와 비교). */
+function dropSupplyRows_(rows) {
+  const sameDay = (a, b) => !a.date || !b.date || a.date === b.date;
+  return rows.filter((a, i) => {
+    const x = +a.amount || 0; if (!x) return true;
+    if (x % 10 !== 0) return false;
+    if (x % 100 === 0) return true;          // 100원 단위 금액은 실제 통행료로 보고 유지 (예: 1,000원·1,100원 두 곳 통과)
+    return !rows.some((b, j) => {
+      if (i === j || !sameDay(a, b)) return false;
+      const y = +b.amount || 0;
+      return (y > x && isVat_(x, y - x)) || (y > x && isVat_(y - x, x));
+    });
+  });
+}
+
 /* 줄 단위로 [날짜·톨게이트·금액]을 묶어 여러 건 추출 */
 function parseTolls_(text) {
   const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
@@ -368,7 +388,7 @@ function parseTolls_(text) {
 /* 영수증 인식 시험: 편집기에서 실행. 인식 원문을 아래 SAMPLE에 붙여넣고 돌려보면 됩니다 */
 function testReceipt() {
   const SAMPLE = `통행료 영수증\n2026.10.05 14:22\n출구 서울\n2,636\n264\n2,900\n카드 1234-****-****-5678`;
-  Logger.log(JSON.stringify(parseTolls_(SAMPLE)));
+  Logger.log(JSON.stringify(dropSupplyRows_(parseTolls_(SAMPLE))));
 }
 
 /* ───── 4. 메일 발송 (엑셀 첨부) ───── */
