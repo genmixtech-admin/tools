@@ -373,20 +373,73 @@ function shrink(file){return new Promise((res,rej)=>{const img=new Image(),url=U
     URL.revokeObjectURL(url);res({name:file.name||"receipt.jpg",mime:"image/jpeg",data:c.toDataURL("image/jpeg",.85).split(",")[1]});};
   img.onerror=()=>rej(new Error(`${file.name} 이미지를 열 수 없습니다.`));img.src=url;});}
 const asB64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name||"receipt.pdf",mime:f.type||"application/pdf",data:String(r.result).split(",")[1]});r.onerror=()=>rej(new Error(`${f.name}을(를) 읽을 수 없습니다.`));r.readAsDataURL(f);});
+// ───── PDF 영수증: 브라우저에서 직접 읽기 (하이패스 홈페이지 등 글자가 들어 있는 PDF) ─────
+// 글자 좌표로 '영수증' 제목마다 한 장씩 묶은 뒤, 각 장에서 일자·○○영업소·"N원(카드)" 금액을 읽습니다.
+// 금액은 결제 줄의 금액(= 실제 낸 통행료)이므로 공급가액·부가세와 섞이지 않습니다.
+const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+function loadPdfJs(){return window.pdfjsLib?Promise.resolve(window.pdfjsLib):new Promise((res,rej)=>{const sc=document.createElement("script");sc.src=PDFJS+"pdf.min.js";
+  sc.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js";res(window.pdfjsLib)};sc.onerror=()=>rej(new Error("PDF 모듈을 불러오지 못했습니다."));document.head.append(sc);});}
+async function parsePdfLocal(file){
+  const lib=await loadPdfJs(),doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;
+  const rows=[];let all="";
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p),vp=page.getViewport({scale:1}),tc=await page.getTextContent();
+    const raw=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>{const [x,y]=vp.convertToViewportPoint(i.transform[4],i.transform[5]);return{s:i.str,x0:x,x1:x+i.width,y}});
+    // 같은 줄에서 붙어 있는 조각을 단어로 합침
+    raw.sort((a,b)=>Math.round(a.y)-Math.round(b.y)||a.x0-b.x0);
+    const words=[];for(const it of raw){const w=words[words.length-1];
+      if(w&&Math.abs(w.y-it.y)<2&&it.x0-w.x1<2.5){w.s+=it.s;w.x1=it.x1}else words.push({...it})}
+    words.forEach(w=>{w.x=(w.x0+w.x1)/2});
+    all+=words.map(w=>w.s).join(" ")+"\n";
+    const anchors=words.filter(w=>w.s.replace(/\s/g,"")==="영수증");
+    if(!anchors.length)continue;
+    const groups=anchors.map(()=>[]);
+    for(const w of words){let bi=-1,bs=1e9;
+      anchors.forEach((a,k)=>{if(a.y<=w.y+2){const sc=Math.abs(a.x-w.x)*3+(w.y-a.y);if(sc<bs){bs=sc;bi=k}}});
+      if(bi>=0)groups[bi].push(w)}
+    groups.forEach(g=>{
+      const t=g.sort((a,b)=>Math.round(a.y)-Math.round(b.y)||a.x-b.x).map(w=>w.s).join(" ");
+      const d=t.match(/(20\d{2})\s*[년.\-/]\s*(\d{1,2})\s*[월.\-/]\s*(\d{1,2})/);
+      const m=t.match(/([\d,]{3,9})\s*원\s*\(\s*(?:카드|현금|선불|후불|하이패스)/)||t.match(/([\d,]{3,9})\s*원/);
+      const gates=[...t.matchAll(/([가-힣A-Za-z0-9]{1,10})\s*(?:영업소|요금소)/g)].map(x=>x[1]).filter(x=>x!=="입구"&&x!=="출구");
+      if(m)rows.push({date:d?`${d[1]}-${d[2].padStart(2,"0")}-${d[3].padStart(2,"0")}`:"",gate:gates[0]||"",amount:+m[1].replace(/,/g,""),file:file.name});
+    });
+  }
+  if(!rows.length)return null;                                   // 글자 없는(스캔) PDF → 서버 OCR로
+  const sm=all.replace(/\s+/g," ").match(/총\s*(\d+)\s*건\s*\/\s*([\d,]+)\s*원/);
+  return{rows,summary:sm?{count:+sm[1],total:+sm[2].replace(/,/g,"")}:null,text:all};
+}
+
 async function readReceipts(files){
   files=[...files].filter(f=>f.type.startsWith("image/")||f.type==="application/pdf"||/\.pdf$/i.test(f.name));if(!files.length)return;
   const big=files.find(f=>f.size>15*1024*1024);const n=$("#rcptNote");
   if(big){n.className="note err";n.textContent=`${big.name}이(가) 15MB를 넘습니다.`;return}
   n.className="note";n.textContent=`영수증 ${files.length}개 인식 중… (PDF는 시간이 조금 더 걸립니다)`;
   try{
-    const payload=await Promise.all(files.map(f=>f.type.startsWith("image/")?shrink(f):asB64(f)));
-    const j=await api(null,{action:"ocr",files:payload});
+    const local=[],remote=[],checks=[];
+    for(const f of files){
+      const isPdf=f.type==="application/pdf"||/\.pdf$/i.test(f.name);
+      let r=null;if(isPdf){try{r=await parsePdfLocal(f)}catch(e){r=null}}
+      if(r){local.push(r);
+        const sum=r.rows.reduce((a,x)=>a+x.amount,0);
+        if(r.summary)checks.push(r.summary.count===r.rows.length&&r.summary.total===sum
+          ?`✔ ${f.name}: 영수증 표시 합계 ${r.summary.count}건·${won(r.summary.total)}원과 일치`
+          :`⚠ ${f.name}: 인식 ${r.rows.length}건·${won(sum)}원 ≠ 영수증 표시 ${r.summary.count}건·${won(r.summary.total)}원 — 확인 필요`);
+      }else remote.push(f);
+    }
+    let j={rows:[],raws:[]};
+    if(remote.length){const payload=await Promise.all(remote.map(f=>f.type.startsWith("image/")?shrink(f):asB64(f)));j=await api(null,{action:"ocr",files:payload});
+      (j.raws||[]).forEach(r=>{if(r.summary)checks.push(r.summary.count===r.count&&r.summary.total===r.sum
+        ?`✔ ${r.file}: 영수증 표시 합계 ${r.summary.count}건·${won(r.summary.total)}원과 일치`
+        :`⚠ ${r.file}: 인식 ${r.count}건·${won(r.sum)}원 ≠ 영수증 표시 ${r.summary.count}건·${won(r.summary.total)}원 — 확인 필요`)});}
+    local.forEach(r=>{j.rows.push(...r.rows);j.raws.push({file:r.rows[0].file,count:r.rows.length,text:r.text.slice(0,4000)})});
     j.rows.forEach(o=>S.tolls.push({id:S.seq++,date:/^\d{4}-\d{2}-\d{2}$/.test(o.date)?o.date:today(),gate:o.gate||"",route:"",amt:+o.amount||"",src:/\.pdf$/i.test(o.file||"")?"PDF 인식":"영수증 인식",file:o.file}));
     S.tolls.sort((a,b)=>String(a.date).localeCompare(String(b.date)));   // 일자 오름차순 (같은 날은 읽은 순서 유지)
     renderTolls();
     const per=j.raws.map(r=>`${r.file} ${r.count}건`).join(" · ");
     $("#rawText").value=j.raws.map(r=>`■ ${r.file} (${r.count}건)\n${r.text}`).join("\n\n");$("#rawBox").hidden=false;
-    n.textContent=`${j.rows.length}건 입력했습니다 (${per}). 톨게이트명·금액을 영수증과 대조하고 구간은 직접 입력하세요.`;
+    n.textContent=`${j.rows.length}건 입력했습니다 (${per}). 톨게이트명·금액을 영수증과 대조하고 구간은 직접 입력하세요.`+(checks.length?" "+checks.join(" "):"");
+    if(checks.some(c=>c.startsWith("⚠")))n.className="note err";
     if(!j.rows.length){n.className="note err";n.textContent="인식된 통행료가 없습니다. ‘인식 원문 보기’에서 내용을 확인해 주세요.";}
   }catch(e){n.className="note err";n.textContent=e.message}
 }

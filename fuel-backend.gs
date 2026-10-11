@@ -1,5 +1,5 @@
 /**
- * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v7 (영수증: 총액만 반영, 공급가액·부가세 행 제외)
+ * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v8 (영수증: 결제 줄 금액 우선 · 면세 0원 처리 · 총 건수/금액 검산)
  *  - API 키는 "스크립트 속성"에만 보관합니다. HTML에는 키가 들어가지 않습니다.
  *
  * 스크립트 속성
@@ -48,7 +48,7 @@ function authorize() {
 /* ───── 라우팅 ───── */
 function doGet(e) {
   try {
-    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v7)' });
+    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v8)' });
     const te = tokenError_(e.parameter.token); if (te) return out({ ok: false, error: te });
     switch (e.parameter.action) {
       case 'price':    return out({ ok: true, ...gyeonggiPrice_() });
@@ -203,7 +203,9 @@ function ocrFiles_(files) {
     const text = ocr_(blob);
     const found = dropSupplyRows_(parseTolls_(text)).map(r => ({ ...r, file: f.name }));
     rows.push(...found);
-    raws.push({ file: f.name, count: found.length, text: text.slice(0, 4000) });
+    const sm = text.replace(/\s+/g, ' ').match(/총\s*(\d+)\s*건\s*\/\s*([\d,]+)\s*원/);
+    raws.push({ file: f.name, count: found.length, text: text.slice(0, 4000),
+      summary: sm ? { count: +sm[1], total: +sm[2].replace(/,/g, '') } : null, sum: found.reduce((a, r) => a + (+r.amount || 0), 0) });
   });
   return { rows, raws };
 }
@@ -279,6 +281,8 @@ function parseSupply_(lines) {
   });
   const near = (a, kind) => items.filter(it => it.kind === kind).sort((x, y) => Math.abs(x.i - a.i) - Math.abs(y.i - a.i));
   return anchors.map(a => {
+    const zeroVat = items.some(it => it.kind === 'v' && Math.abs(it.i - a.i) <= 1 && it.val === 0) || /부\s?가\s?세\s*:?\s*0\s*원/.test(lines[a.i] || '');
+    if (zeroVat) return { date: a.date, gate: a.gate, amount: a.supply };     // 면세(부가세 0원): 공급가액 = 통행료
     const vat = (near(a, 'v').find(v => Math.abs(v.val - a.supply / 10) <= 1) || {}).val;
     const want = vat ? a.supply + vat : a.supply * 1.1, tol = vat ? 1 : 1.5;
     const paid = (near(a, 't').find(t => Math.abs(t.val - want) <= tol) || {}).val
@@ -361,9 +365,24 @@ function dropSupplyRows_(rows) {
   });
 }
 
+/* 하이패스·한국도로공사 영수증: 결제 줄 "1,000 원(카드)"의 금액이 실제 낸 통행료입니다.
+ * 한국도로공사 통행료는 부가세 0원(공급가액 = 통행료)이고 민자도로만 909+91처럼 나뉘므로,
+ * 결제 줄이 있으면 그 금액만 씁니다. 일자·영업소는 개수가 같으면 순서대로, 아니면 바로 앞의 것과 짝짓습니다. */
+const PAY_RE = /([\d,]{3,9})\s*원\s*\(\s*(?:카드|현금|선불|후불|하이패스)/g;
+function parsePayLines_(text) {
+  const pays = [...text.matchAll(PAY_RE)].map(m => ({ pos: m.index, v: Number(m[1].replace(/,/g, '')) })).filter(p => p.v >= 100);
+  if (!pays.length) return [];
+  const dates = [...text.matchAll(/(20\d{2})\s?[.\-/년]\s?(\d{1,2})\s?[.\-/월]\s?(\d{1,2})/g)].map(m => ({ pos: m.index, v: ymd_(m) }));
+  const gates = [...text.matchAll(/([가-힣A-Za-z0-9]{1,10})\s?(?:영업소|요금소)/g)].filter(m => !/^(입구|출구)$/.test(m[1])).map(m => ({ pos: m.index, v: m[1] }));
+  const pick = (list, p, k) => list.length === pays.length ? list[k].v : ((list.filter(x => x.pos <= p.pos).pop() || list[0] || {}).v || '');
+  return pays.map((p, k) => ({ date: pick(dates, p, k), gate: pick(gates, p, k), amount: p.v }));
+}
+
 /* 줄 단위로 [날짜·톨게이트·금액]을 묶어 여러 건 추출 */
 function parseTolls_(text) {
   const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const pay = parsePayLines_(text);                     // ⓪ 결제 줄 "N 원(카드)" — 하이패스 영수증
+  if (pay.length) return pay;
   const tri = parseVatTriples_(text);                   // ① 공급가액+부가세=총액 관계로 찾기 (라벨 불필요)
   if (tri.length) return tri;
   if (lines.some(l => SUPPLY_RE.test(l))) return parseSupply_(lines);   // ② 라벨 기준
