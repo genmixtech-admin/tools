@@ -5,7 +5,7 @@
 | 도구 | 파일 | 웹 주소 |
 |---|---|---|
 | 출장비 정산 (v1.8) | `travel-expense.html` | https://genmixtech-admin.github.io/tools/travel-expense.html |
-| 유류대 지급신청 (v1.7) | `fuel-claim.html` | https://genmixtech-admin.github.io/tools/fuel-claim.html |
+| 유류대 지급신청 (v1.8) | `fuel-claim.html` | https://genmixtech-admin.github.io/tools/fuel-claim.html |
 
 - 원본: Obsidian `100_Intranet_경영정보/tools/`
 - 관리자: genmixtech.ai@gmail.com
@@ -16,8 +16,8 @@
 - `mail-sender.gs`: genmixtech.ai@gmail.com 계정의 Google Apps Script(웹 앱)로 배포. 페이지가 엑셀을 보내면 Gmail로 첨부 발송.
 - 하루 발송 한도 50건, 모든 발송은 관리 계정에 숨은 참조로 기록.
 
-## 유류대 지급신청 (v1.7)
-- `fuel-backend.gs` (v11): genmixtech.ai@gmail.com 계정의 Google Apps Script(웹 앱)로 배포. 오피넷 경기 평균가, 도로거리(장소 LOOKUP 시트 → 카카오/네이버), 통행료 영수증 OCR, 엑셀 첨부 메일 발송.
+## 유류대 지급신청 (v1.8)
+- `fuel-backend.gs` (v12): genmixtech.ai@gmail.com 계정의 Google Apps Script(웹 앱)로 배포. 오피넷 경기 평균가, 도로거리(장소 LOOKUP 시트 → 카카오/네이버), 통행료 영수증 OCR, 엑셀 첨부 메일 발송.
 - API 키·접속 토큰·LOOKUP 시트 ID는 Apps Script 스크립트 속성에만 보관하며 이 저장소에는 없습니다.
 - 자주 가는 곳(명칭·주소·별칭)은 사내 구글 시트 「유류대 장소 LOOKUP」에서 관리합니다. 주소 목록은 이 공개 저장소에 올리지 않습니다.
 - 사용자는 처음 한 번 담당자에게 받은 접속 토큰만 입력합니다.

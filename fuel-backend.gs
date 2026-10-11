@@ -1,5 +1,5 @@
 /**
- * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v11 (주행이력 DB: 구간별 중앙값 · 15%/5km 편차 경고)
+ * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v12 (기준거리 탭 연동 · 주행이력 중앙값 · 15%/5km 편차 경고)
  *  - API 키는 "스크립트 속성"에만 보관합니다. HTML에는 키가 들어가지 않습니다.
  *
  * 스크립트 속성
@@ -49,7 +49,7 @@ function authorize() {
 /* ───── 라우팅 ───── */
 function doGet(e) {
   try {
-    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v11)' });
+    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v12)' });
     const te = tokenError_(e.parameter.token); if (te) return out({ ok: false, error: te });
     switch (e.parameter.action) {
       case 'price':    return out({ ok: true, ...gyeonggiPrice_() });
@@ -207,8 +207,9 @@ function testRoute() {
  * 제출된 주행기록을 쌓아 구간별 중앙값을 만들고, 새 거리와 비교해 편차가 크면 경고합니다.
  *  - 구간 키: LOOKUP 명칭이 있으면 'L:명칭', 없으면 좌표를 약 200m 단위로 반올림한 'G:경도,위도'
  *  - A→B와 B→A는 같은 구간, 거리는 편도 기준
- *  - 기준값: 경고가 붙은 기록을 뺀 '신청 편도KM'의 중앙값 (3건 이상일 때)
- *            3건 미만이면 LOOKUP 'E 기존 기록 편도 KM'(자사 ↔ 해당 장소)을 초기 기준으로 사용
+ *  - 기준값: ① 경고가 붙은 기록을 뺀 '신청 편도KM'의 중앙값 (3건 이상일 때)
+ *            ② 3건 미만이면 '기준거리' 탭(회사가 정한 구간 기준)
+ *            ③ 그것도 없으면 장소 탭 'E 기존 기록 편도 KM'(자사 ↔ 해당 장소)
  *  - 판정 기준: |값 − 기준| > max(기준 × 15%, 5km) 이면 경고
  */
 const HIST_TAB = '주행이력';
@@ -250,10 +251,29 @@ function histStats_() {
   try { cache.put('hist1', JSON.stringify(out), 600); } catch (e) {}
   return out;
 }
-/* 이 구간의 기준값: DB(3건 이상) → LOOKUP 기존 기록 → 없음 */
+/* '기준거리' 탭: 출발 | 도착 | 기준 편도KM — 회사가 정한 구간 기준(양방향 동일). 명칭은 LOOKUP 명칭·별칭으로 맞춤. 10분 캐시 */
+const REF_TAB = '기준거리';
+function refTable_() {
+  const id = P('LOOKUP_SHEET_ID'); if (!id) return {};
+  const cache = CacheService.getScriptCache(), c = cache.get('ref1');
+  if (c) return JSON.parse(c);
+  const out = {}, sh = SpreadsheetApp.openById(id).getSheetByName(REF_TAB);
+  if (sh && sh.getLastRow() > 1) {
+    const t = lookupTable_(), canon = n => ((t[norm_(n)] || {}).name || String(n).trim());
+    sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues().forEach(([a, b, km]) => {
+      km = Number(km) || 0; if (!a || !b || !km) return;
+      out[routeKey_('L:' + canon(a), 'L:' + canon(b))] = km;
+    });
+  }
+  try { cache.put('ref1', JSON.stringify(out), 600); } catch (e) {}
+  return out;
+}
+/* 이 구간의 기준값: 주행이력(3건 이상) → 기준거리 탭 → 장소 탭 E열(자사↔장소) → 없음 */
 function baseFor_(rk, a, b) {
   let st = null; try { st = histStats_()[rk] || null; } catch (e) {}
   if (st && st.n >= MIN_N) return { ...st, src: 'DB' };
+  let ref = 0; try { ref = refTable_()[rk] || 0; } catch (e) {}
+  if (ref) return { n: st ? st.n : 0, median: ref, min: ref, max: ref, src: '기준표' };
   let seed = 0; try {
     const t = lookupTable_(), home = n => { const v = t[norm_(n)]; return v && v.kind === '자사'; };
     const other = a.lk && home(a.lk) ? b.lk : b.lk && home(b.lk) ? a.lk : '';
@@ -277,7 +297,8 @@ function recordTrips_(b) {
 }
 /* 진단: 구간별 통계 로그 */
 function testHistory() {
-  CacheService.getScriptCache().remove('hist1');
+  CacheService.getScriptCache().removeAll(['hist1', 'ref1', 'lookup2']);
+  const ref = refTable_(); Logger.log(`기준거리 ${Object.keys(ref).length}구간`); Object.keys(ref).forEach(k => Logger.log(`  ${k} → ${ref[k]}km`));
   const st = histStats_();
   Logger.log(`구간 ${Object.keys(st).length}개`);
   Object.keys(st).forEach(k => Logger.log(`${k} → 중앙값 ${st[k].median}km (${st[k].n}건, ${st[k].min}~${st[k].max})`));

@@ -244,7 +244,7 @@ const TOL=x=>Math.max(x*0.15,5);
 function judge(t){
   const km=+t.km||0,api=+t.apiKm||0,b=t.base,f=[];
   if(!km)return{flags:f,msg:[]};
-  const msg=[],ref=b&&(b.src==="DB"||b.src==="기존 기록")?+b.median:0;
+  const msg=[],ref=b&&["DB","기준표","기존 기록"].includes(b.src)?+b.median:0;
   if(!api){f.push("미계산");msg.push("‘거리’로 계산하지 않은 수기 KM");}
   if(ref&&api&&Math.abs(api-ref)>TOL(ref)){f.push("지도 편차");msg.push(`지도 ${api}km vs ${b.src} ${ref}km`);}
   if(ref&&Math.abs(km-ref)>TOL(ref)){f.push("DB 편차");msg.push(`신청 ${km}km vs ${b.src} ${ref}km`);}
@@ -263,7 +263,7 @@ function renderTrips(){
     <td><input list="projList" data-k="proj" value="${esc(t.proj)}" aria-label="프로젝트명">
       ${t.proj&&!ml.includes(t.proj)?'<span class="pill new">미등록</span>':""}${t.est?` <span class="pill ai" title="${esc((t.via?t.via+": ":"")+(t.hit||""))}">자동계산</span>`:""}${t.toll?` <span class="pill">예상통행료 ${won(t.toll)}</span>`:""}${(()=>{
         const b=t.base,j=judge(t);let h="";
-        if(b&&b.median)h+=` <span class="pill base" title="${esc(b.src==="DB"?`최소 ${b.min} · 최대 ${b.max}km`:b.src)}">${b.src==="기존 기록"?"기존 기록":"DB 중앙"} ${b.median}km${b.n?`·${b.n}건`:""}</span>`;
+        if(b&&b.median)h+=` <span class="pill base" title="${esc(b.src==="DB"?`최소 ${b.min} · 최대 ${b.max}km`:b.src)}">${b.src==="DB"?"DB 중앙":b.src==="기준표"?"기준표":b.src==="기존 기록"?"기존 기록":"DB(표본 부족)"} ${b.median}km${b.n?`·${b.n}건`:""}</span>`;
         if(j.flags.length)h+=` <span class="pill dup" title="${esc(j.msg.join(" / "))}">⚠ ${esc(j.flags.join("·"))}</span><input class="reason" data-k="reason" value="${esc(t.reason||"")}" placeholder="편차 사유 (필수)" aria-label="편차 사유">`;
         return h;})()}</td>
     <td class="sum">${won(tripKm(t))}</td>
@@ -492,7 +492,7 @@ function buildWB(){
   const nT=S.trips.length,nL=S.tolls.length;
   const tr=[["사용일자","출발지","도착지","편도KM","왕복","적용KM","프로젝트명","지도 편도KM","기준(중앙값)KM","기준 건수","판정","사유"].map(T),
     ...S.trips.map((t,i)=>[T(t.date),T(t.from),T(t.to),N(+t.km||0),T(t.rt?"Y":"N"),N(tripKm(t),`D${i+2}*IF(E${i+2}="Y",2,1)`),T(t.proj),
-      t.apiKm?N(+t.apiKm):T(""),t.base&&t.base.median?N(+t.base.median):T(""),T(t.base?(t.base.src==="기존 기록"?"기존 기록":t.base.n+"건"):""),T(verdictOf(t)),T(t.reason||"")]),
+      t.apiKm?N(+t.apiKm):T(""),t.base&&t.base.median?N(+t.base.median):T(""),T(t.base?(t.base.src==="DB"?t.base.n+"건":t.base.src):""),T(verdictOf(t)),T(t.reason||"")]),
     [T("합계"),T(""),T(""),T(""),T(""),N(c.km,nT?`SUM(F2:F${nT+1})`:undefined),T(""),T(""),T(""),T(""),T(""),T("")]];
   const tl=[["일자","시각","톨게이트","구간","금액","근거"].map(T),
     ...S.tolls.map(t=>[T(t.date),T(t.time||""),T(t.gate),T(t.route),N(+t.amt||0,undefined,"#,##0"),T(t.src)]),
