@@ -54,6 +54,7 @@ tfoot td{font-weight:700;border-bottom:none;border-top:2px solid var(--ink)}
 .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
 .pill.new{background:var(--accent-soft);color:var(--accent)}
 .pill.ai{color:var(--ok)}
+.pill.dup{background:var(--warn);color:var(--paper)}
 .row-actions{display:flex;gap:4px}
 .row-actions button{padding:4px 7px;font-size:12px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -166,11 +167,11 @@ body{margin:0}
     <div class="tbl">
       <table>
         <thead><tr>
-          <th style="width:125px">일자</th><th style="width:170px">톨게이트</th><th>구간 (수기)</th><th class="n" style="width:110px">금액 (원)</th>
+          <th style="width:125px">일자</th><th style="width:96px">시각</th><th style="width:150px">톨게이트</th><th>구간 (수기)</th><th class="n" style="width:110px">금액 (원)</th>
           <th style="width:110px">근거</th><th style="width:60px"></th>
         </tr></thead>
         <tbody id="tollBody"></tbody>
-        <tfoot><tr><td colspan="3">통행료 합계</td><td class="sum" id="tollSum">0</td><td colspan="2"></td></tr></tfoot>
+        <tfoot><tr><td colspan="4">통행료 합계</td><td class="sum" id="tollSum">0</td><td colspan="2"></td></tr></tfoot>
       </table>
     </div>
     <div class="bar"><button id="addToll">+ 통행료 추가</button></div>
@@ -250,9 +251,13 @@ function renderTrips(){
   </tr>`).join("");
   aiToggle();totals();
 }
+// 같은 일자·시각(분 단위)은 한 건만: 영수증 한 장 = 결제 시각 하나
+const tollKey=t=>t.date&&t.time?`${t.date}T${t.time}`:"";
 function renderTolls(){
+  const cnt={};S.tolls.forEach(t=>{const k=tollKey(t);if(k)cnt[k]=(cnt[k]||0)+1});
   $("#tollBody").innerHTML=S.tolls.map(t=>`<tr data-id="${t.id}">
     <td><input type="date" data-k="date" value="${esc(t.date)}" aria-label="일자"></td>
+    <td><input type="time" data-k="time" value="${esc(t.time||"")}" aria-label="시각">${cnt[tollKey(t)]>1?'<span class="pill dup">중복</span>':""}</td>
     <td><input data-k="gate" value="${esc(t.gate)}" aria-label="톨게이트"></td>
     <td><input data-k="route" value="${esc(t.route)}" aria-label="구간" placeholder="예: 본사 → 평택 고객사"></td>
     <td><input class="num" data-k="amt" inputmode="numeric" value="${t.amt??""}" aria-label="금액"></td>
@@ -290,14 +295,14 @@ function bindTable(body,list,after){
       if(row&&(+row.km||0)>0){row.km="";row.est=false;row.toll=0;row.hit="";after();
         $("#tripNote").className="note";$("#tripNote").textContent="출발지·도착지가 바뀌어 KM를 비웠습니다. ‘거리’를 눌러 다시 계산하세요.";}
       return;}
-    if(["proj","rt"].includes(k))after()});
+    if(["proj","rt"].includes(k)||(list==="tolls"&&(k==="date"||k==="time")))after()});
   body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const tr=b.closest("tr"),id=+tr.dataset.id;
     if(b.dataset.act==="del"){S[list]=S[list].filter(r=>r.id!==id);after()}
     if(b.dataset.act==="est")estimate([S.trips.find(r=>r.id===id)],b)});
 }
 bindTable($("#tripBody"),"trips",renderTrips);bindTable($("#tollBody"),"tolls",renderTolls);
 $("#addTrip").onclick=()=>{const last=S.trips.at(-1);S.trips.push({id:S.seq++,date:last?.date||today(),from:last?.to||"",to:"",km:"",rt:false,proj:last?.proj||"",est:false});renderTrips()};
-$("#addToll").onclick=()=>{S.tolls.push({id:S.seq++,date:today(),gate:"",route:"",amt:"",src:"수기"});renderTolls()};
+$("#addToll").onclick=()=>{S.tolls.push({id:S.seq++,date:today(),time:"",gate:"",route:"",amt:"",src:"수기"});renderTolls()};
 $("#resetAll").onclick=()=>{const b=$("#resetAll");if(b.dataset.c){S=sample0();S.trips=[];S.tolls=[];S.master=masterList().join("\n");renderHead();renderTrips();renderTolls();b.textContent="새 신청서";delete b.dataset.c}else{b.dataset.c=1;b.textContent="한 번 더 누르면 비웁니다";setTimeout(()=>{b.textContent="새 신청서";delete b.dataset.c},3000)}};
 
 // 시트 붙여넣기용 TSV
@@ -306,7 +311,7 @@ $("#copyTsv").onclick=async()=>{
     ["유종","리터당가격","기준일","감가상각비","연비","KM당단가"].join("\t"),[FUEL[S.fuel].name,S.price,S.priceDate,S.dep,S.eff,u.toFixed(1)].join("\t"),"",
     ["사용일자","출발지","도착지","KM","왕복","적용KM","프로젝트명"].join("\t"),
     ...S.trips.map(t=>[t.date,t.from,t.to,t.km,t.rt?"Y":"N",tripKm(t),t.proj].join("\t")),"",
-    ["일자","톨게이트","구간","통행료","근거"].join("\t"),...S.tolls.map(t=>[t.date,t.gate,t.route,t.amt,t.src].join("\t"))];
+    ["일자","시각","톨게이트","구간","통행료","근거"].join("\t"),...S.tolls.map(t=>[t.date,t.time||"",t.gate,t.route,t.amt,t.src].join("\t"))];
   const txt=L.join("\n"),b=$("#copyTsv");
   try{await navigator.clipboard.writeText(txt);b.textContent="복사됨";}
   catch(e){const ta=document.createElement("textarea");ta.value=txt;document.body.append(ta);ta.select();try{document.execCommand("copy");b.textContent="복사됨"}catch(_){b.textContent="복사 실패"}ta.remove();}
@@ -402,7 +407,8 @@ async function parsePdfLocal(file){
       const d=t.match(/(20\d{2})\s*[년.\-/]\s*(\d{1,2})\s*[월.\-/]\s*(\d{1,2})/);
       const m=t.match(/([\d,]{3,9})\s*원\s*\(\s*(?:카드|현금|선불|후불|하이패스)/)||t.match(/([\d,]{3,9})\s*원/);
       const gates=[...t.matchAll(/([가-힣A-Za-z0-9]{1,10})\s*(?:영업소|요금소)/g)].map(x=>x[1]).filter(x=>x!=="입구"&&x!=="출구");
-      if(m)rows.push({date:d?`${d[1]}-${d[2].padStart(2,"0")}-${d[3].padStart(2,"0")}`:"",gate:gates[0]||"",amount:+m[1].replace(/,/g,""),file:file.name});
+      const tm=t.match(/(\d{1,2})\s*시\s*(\d{1,2})\s*분/)||t.match(/\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+      if(m)rows.push({date:d?`${d[1]}-${d[2].padStart(2,"0")}-${d[3].padStart(2,"0")}`:"",time:tm?`${tm[1].padStart(2,"0")}:${tm[2].padStart(2,"0")}`:"",gate:gates[0]||"",amount:+m[1].replace(/,/g,""),file:file.name});
     });
   }
   if(!rows.length)return null;                                   // 글자 없는(스캔) PDF → 서버 OCR로
@@ -433,12 +439,16 @@ async function readReceipts(files){
         ?`✔ ${r.file}: 영수증 표시 합계 ${r.summary.count}건·${won(r.summary.total)}원과 일치`
         :`⚠ ${r.file}: 인식 ${r.count}건·${won(r.sum)}원 ≠ 영수증 표시 ${r.summary.count}건·${won(r.summary.total)}원 — 확인 필요`)});}
     local.forEach(r=>{j.rows.push(...r.rows);j.raws.push({file:r.rows[0].file,count:r.rows.length,text:r.text.slice(0,4000)})});
-    j.rows.forEach(o=>S.tolls.push({id:S.seq++,date:/^\d{4}-\d{2}-\d{2}$/.test(o.date)?o.date:today(),gate:o.gate||"",route:"",amt:+o.amount||"",src:/\.pdf$/i.test(o.file||"")?"PDF 인식":"영수증 인식",file:o.file}));
-    S.tolls.sort((a,b)=>String(a.date).localeCompare(String(b.date)));   // 일자 오름차순 (같은 날은 읽은 순서 유지)
+    const have=new Set(S.tolls.map(tollKey).filter(Boolean));let dup=0,added=0;
+    j.rows.forEach(o=>{
+      const row={id:S.seq++,date:/^\d{4}-\d{2}-\d{2}$/.test(o.date)?o.date:today(),time:/^\d{2}:\d{2}$/.test(o.time||"")?o.time:"",gate:o.gate||"",route:"",amt:+o.amount||"",src:/\.pdf$/i.test(o.file||"")?"PDF 인식":"영수증 인식",file:o.file};
+      const k=tollKey(row);if(k&&have.has(k)){dup++;return}       // 같은 일시가 이미 있으면 넣지 않음
+      if(k)have.add(k);S.tolls.push(row);added++;});
+    S.tolls.sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time||"").localeCompare(String(b.time||"")));   // 일시 오름차순
     renderTolls();
     const per=j.raws.map(r=>`${r.file} ${r.count}건`).join(" · ");
     $("#rawText").value=j.raws.map(r=>`■ ${r.file} (${r.count}건)\n${r.text}`).join("\n\n");$("#rawBox").hidden=false;
-    n.textContent=`${j.rows.length}건 입력했습니다 (${per}). 톨게이트명·금액을 영수증과 대조하고 구간은 직접 입력하세요.`+(checks.length?" "+checks.join(" "):"");
+    n.textContent=`${added}건 입력했습니다 (${per})`+(dup?` · 같은 일시가 이미 있어 ${dup}건은 넣지 않았습니다(중복)`:"")+`. 톨게이트명·금액을 영수증과 대조하고 구간은 직접 입력하세요.`+(checks.length?" "+checks.join(" "):"");
     if(checks.some(c=>c.startsWith("⚠")))n.className="note err";
     if(!j.rows.length){n.className="note err";n.textContent="인식된 통행료가 없습니다. ‘인식 원문 보기’에서 내용을 확인해 주세요.";}
   }catch(e){n.className="note err";n.textContent=e.message}
@@ -460,10 +470,10 @@ function buildWB(){
   const tr=[["사용일자","출발지","도착지","편도KM","왕복","적용KM","프로젝트명"].map(T),
     ...S.trips.map((t,i)=>[T(t.date),T(t.from),T(t.to),N(+t.km||0),T(t.rt?"Y":"N"),N(tripKm(t),`D${i+2}*IF(E${i+2}="Y",2,1)`),T(t.proj)]),
     [T("합계"),T(""),T(""),T(""),T(""),N(c.km,nT?`SUM(F2:F${nT+1})`:undefined),T("")]];
-  const tl=[["일자","톨게이트","구간","금액","근거"].map(T),
-    ...S.tolls.map(t=>[T(t.date),T(t.gate),T(t.route),N(+t.amt||0,undefined,"#,##0"),T(t.src)]),
-    [T("합계"),T(""),T(""),N(c.toll,nL?`SUM(D2:D${nL+1})`:undefined,"#,##0"),T("")]];
-  const kmRef=`'주행기록'!F${nT+2}`,tollRef=`'통행료'!D${nL+2}`;
+  const tl=[["일자","시각","톨게이트","구간","금액","근거"].map(T),
+    ...S.tolls.map(t=>[T(t.date),T(t.time||""),T(t.gate),T(t.route),N(+t.amt||0,undefined,"#,##0"),T(t.src)]),
+    [T("합계"),T(""),T(""),T(""),N(c.toll,nL?`SUM(E2:E${nL+1})`:undefined,"#,##0"),T("")]];
+  const kmRef=`'주행기록'!F${nT+2}`,tollRef=`'통행료'!E${nL+2}`;
   const sh=[[T("개인차량 유류대 지급신청서")],[],
     [T("신청월"),T(S.head.month)],[T("성명"),T(S.head.name)],[T("소속"),T(S.head.dept)],[T("차량번호"),T(S.head.car)],[T("이메일"),T(S.head.email)],[],
     [T("유종"),T(FUEL[S.fuel].name)],
@@ -475,7 +485,7 @@ function buildWB(){
     [T("통행료"),N(c.toll,tollRef,"#,##0")],
     [T("지급 신청액"),N(c.all,"B16+B17","#,##0")]];
   const wb=XLSX.utils.book_new(),add=(rows,name,cols)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=cols.map(w=>({wch:w}));XLSX.utils.book_append_sheet(wb,ws,name)};
-  add(sh,"신청서",[30,22]);add(tr,"주행기록",[12,24,24,9,6,9,26]);add(tl,"통행료",[12,16,28,10,12]);
+  add(sh,"신청서",[30,22]);add(tr,"주행기록",[12,24,24,9,6,9,26]);add(tl,"통행료",[12,7,16,28,10,12]);
   return wb;
 }
 $("#xlsxBtn").onclick=()=>{

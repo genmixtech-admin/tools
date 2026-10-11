@@ -1,5 +1,5 @@
 /**
- * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v8 (영수증: 결제 줄 금액 우선 · 면세 0원 처리 · 총 건수/금액 검산)
+ * 유류대 지급신청서 HTML용 백엔드 (Google Apps Script 웹앱)  v9 (영수증: 일자+시각 인식, 같은 일시 중복 제거)
  *  - API 키는 "스크립트 속성"에만 보관합니다. HTML에는 키가 들어가지 않습니다.
  *
  * 스크립트 속성
@@ -48,7 +48,7 @@ function authorize() {
 /* ───── 라우팅 ───── */
 function doGet(e) {
   try {
-    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v8)' });
+    if (!e.parameter.action) return out({ ok: true, msg: '유류대 백엔드 동작 중 (v9)' });
     const te = tokenError_(e.parameter.token); if (te) return out({ ok: false, error: te });
     switch (e.parameter.action) {
       case 'price':    return out({ ok: true, ...gyeonggiPrice_() });
@@ -224,6 +224,15 @@ const LABEL_RE = /공\s?급\s?가\s?액|부\s?가\s?세|세\s?액|합\s?계|통\
 const HAS_LABEL = new RegExp(LABEL_RE.source);
 const kindOf_ = l => SUPPLY_RE.test(l) ? 's' : VAT_RE.test(l) ? 'v' : 't';     // 공급가액 / 부가세 / 통행료·합계
 const ymd_ = d => `${d[1]}-${d[2].padStart(2, '0')}-${d[3].padStart(2, '0')}`;
+/* 날짜 바로 뒤(40자 이내)의 시각: "16시58분", "16:58", "16:58:07" → "16:58" */
+function timeAt_(s, pos) {
+  const t = String(s).slice(pos, pos + 40).match(/(\d{1,2})\s*시\s*(\d{1,2})\s*분|\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+  if (!t) return '';
+  const h = t[1] || t[3], m = t[2] || t[4];
+  return +h < 24 && +m < 60 ? `${h.padStart(2, '0')}:${m.padStart(2, '0')}` : '';
+}
+/* 날짜 목록 (위치·일자·시각) */
+const datesIn_ = text => [...text.matchAll(/(20\d{2})\s?[.\-/년]\s?(\d{1,2})\s?[.\-/월]\s?(\d{1,2})/g)].map(m => ({ pos: m.index, v: ymd_(m), t: timeAt_(text, m.index + m[0].length) }));
 
 /* strict: 영업소·TG·IC·출구처럼 톨게이트 표시가 있을 때만 (아무 한글 단어로 대신하지 않음) */
 function gateIn_(s, strict) {
@@ -268,26 +277,26 @@ function labeledValues_(lines) {
  * 통행료 후보 중 공급가액+부가세와 맞는 값을 고르고, 없으면 공급가액+부가세로 계산 (OCR 오독 보정) */
 function parseSupply_(lines) {
   const items = labeledValues_(lines), anchors = [];
-  let curDate = '', gate = '';
+  let curDate = '', curTime = '', gate = '';
   lines.forEach((line, i) => {
     const d = line.match(DATE_RE);
-    if (d) curDate = ymd_(d);
+    if (d) { curDate = ymd_(d); curTime = timeAt_(line, d.index + d[0].length); }
     if (!SUPPLY_RE.test(line)) {
       if (!SKIP_LINE.test(line)) { const g = gateIn_(line, true) || (gate ? '' : gateIn_(line)); if (g) gate = g; }
       return;
     }
     const s = items.find(it => it.kind === 's' && it.i === i);
-    if (s) { anchors.push({ i, date: curDate, gate, supply: s.val }); gate = ''; }
+    if (s) { anchors.push({ i, date: curDate, time: curTime, gate, supply: s.val }); gate = ''; }
   });
   const near = (a, kind) => items.filter(it => it.kind === kind).sort((x, y) => Math.abs(x.i - a.i) - Math.abs(y.i - a.i));
   return anchors.map(a => {
     const zeroVat = items.some(it => it.kind === 'v' && Math.abs(it.i - a.i) <= 1 && it.val === 0) || /부\s?가\s?세\s*:?\s*0\s*원/.test(lines[a.i] || '');
-    if (zeroVat) return { date: a.date, gate: a.gate, amount: a.supply };     // 면세(부가세 0원): 공급가액 = 통행료
+    if (zeroVat) return { date: a.date, time: a.time, gate: a.gate, amount: a.supply };     // 면세(부가세 0원): 공급가액 = 통행료
     const vat = (near(a, 'v').find(v => Math.abs(v.val - a.supply / 10) <= 1) || {}).val;
     const want = vat ? a.supply + vat : a.supply * 1.1, tol = vat ? 1 : 1.5;
     const paid = (near(a, 't').find(t => Math.abs(t.val - want) <= tol) || {}).val
       || (vat ? a.supply + vat : Math.round(a.supply * 1.1 / 10) * 10);
-    return { date: a.date, gate: a.gate, amount: paid };
+    return { date: a.date, time: a.time, gate: a.gate, amount: paid };
   });
 }
 /* ───── 공급가액·부가세·총액 '관계'로 찾기 (라벨 불필요) ─────
@@ -329,19 +338,20 @@ function parseVatTriples_(text) {
   found.sort((x, y) => x.pos - y.pos);
 
   // 날짜·톨게이트 위치 목록
-  const dates = [...text.matchAll(/(20\d{2})\s?[.\-/년]\s?(\d{1,2})\s?[.\-/월]\s?(\d{1,2})/g)].map(m => ({ pos: m.index, v: ymd_(m) }));
+  const dates = datesIn_(text);
   const gates = []; let off = 0;
   text.split('\n').forEach(line => { const g = !SKIP_LINE.test(line) && gateIn_(line, true); if (g) gates.push({ pos: off, v: g }); off += line.length + 1; });
   // 개수가 같으면 순서대로 짝짓기 (표가 칸 단위로 읽힌 경우), 아니면 바로 앞(없으면 바로 뒤)의 값
-  const pick = (list, f, k) => {
+  const pickObj = (list, f, k) => {
     const uniq = list.filter((x, n) => n === 0 || x.v !== list[n - 1].v || x.pos - list[n - 1].pos > 40);
-    if (uniq.length === found.length) return uniq[k].v;
+    if (uniq.length === found.length) return uniq[k];
     const before = list.filter(x => x.pos <= f.pos).pop();
-    return (before || list.find(x => x.pos > f.pos) || {}).v || '';
+    return before || list.find(x => x.pos > f.pos) || {};
   };
+  const pick = (list, f, k) => pickObj(list, f, k).v || '';
   // 톨게이트 표시(영업소·TG·출구 등)가 없으면 금액이 있는 줄의 지명을 사용 (예: "2026-10-05 서울 2,636 264 2,900")
   const lineAt = pos => { const st = text.lastIndexOf('\n', pos) + 1, en = text.indexOf('\n', pos); return text.slice(st, en < 0 ? undefined : en); };
-  return found.map((f, k) => ({ date: pick(dates, f, k), gate: gates.length ? pick(gates, f, k) : gateIn_(lineAt(f.pos)),
+  return found.map((f, k) => ({ date: pick(dates, f, k), time: pickObj(dates, f, k).t || '', gate: gates.length ? pick(gates, f, k) : gateIn_(lineAt(f.pos)),
     amount: f.total, supply: f.supply, vat: f.vat }));
 }
 
@@ -352,6 +362,8 @@ function parseVatTriples_(text) {
  *  - 100원 단위 금액은 실제 통행료로 보고 항상 유지 (같은 날 1,000원·1,100원 두 곳을 지난 경우 보호)
  *  같은 날짜끼리만 비교합니다(날짜가 비어 있으면 모두와 비교). */
 function dropSupplyRows_(rows) {
+  const seen = new Set();
+  rows = rows.filter(r => { if (!r.date || !r.time) return true; const k = r.date + 'T' + r.time; if (seen.has(k)) return false; seen.add(k); return true; });  // 같은 일시는 한 건
   const sameDay = (a, b) => !a.date || !b.date || a.date === b.date;
   return rows.filter((a, i) => {
     const x = +a.amount || 0; if (!x) return true;
@@ -372,10 +384,10 @@ const PAY_RE = /([\d,]{3,9})\s*원\s*\(\s*(?:카드|현금|선불|후불|하이�
 function parsePayLines_(text) {
   const pays = [...text.matchAll(PAY_RE)].map(m => ({ pos: m.index, v: Number(m[1].replace(/,/g, '')) })).filter(p => p.v >= 100);
   if (!pays.length) return [];
-  const dates = [...text.matchAll(/(20\d{2})\s?[.\-/년]\s?(\d{1,2})\s?[.\-/월]\s?(\d{1,2})/g)].map(m => ({ pos: m.index, v: ymd_(m) }));
+  const dates = datesIn_(text);
   const gates = [...text.matchAll(/([가-힣A-Za-z0-9]{1,10})\s?(?:영업소|요금소)/g)].filter(m => !/^(입구|출구)$/.test(m[1])).map(m => ({ pos: m.index, v: m[1] }));
-  const pick = (list, p, k) => list.length === pays.length ? list[k].v : ((list.filter(x => x.pos <= p.pos).pop() || list[0] || {}).v || '');
-  return pays.map((p, k) => ({ date: pick(dates, p, k), gate: pick(gates, p, k), amount: p.v }));
+  const at = (list, p, k) => list.length === pays.length ? list[k] : (list.filter(x => x.pos <= p.pos).pop() || list[0] || {});
+  return pays.map((p, k) => { const d = at(dates, p, k); return { date: d.v || '', time: d.t || '', gate: at(gates, p, k).v || '', amount: p.v }; });
 }
 
 /* 줄 단위로 [날짜·톨게이트·금액]을 묶어 여러 건 추출 */
@@ -386,20 +398,20 @@ function parseTolls_(text) {
   const tri = parseVatTriples_(text);                   // ① 공급가액+부가세=총액 관계로 찾기 (라벨 불필요)
   if (tri.length) return tri;
   if (lines.some(l => SUPPLY_RE.test(l))) return parseSupply_(lines);   // ② 라벨 기준
-  const rows = []; let curDate = '', pendingGate = '';
+  const rows = []; let curDate = '', curTime = '', pendingGate = '';
   lines.forEach(line => {
     const d = line.match(DATE_RE);
-    if (d) curDate = `${d[1]}-${d[2].padStart(2, '0')}-${d[3].padStart(2, '0')}`;
+    if (d) { curDate = ymd_(d); curTime = timeAt_(line, d.index + d[0].length); }
     if (SKIP_LINE.test(line)) return;
     const gate = gateIn_(line), amt = amountIn_(line);
-    if (amt && (gate || pendingGate)) { rows.push({ date: curDate, gate: gate || pendingGate, amount: amt }); pendingGate = ''; }
+    if (amt && (gate || pendingGate)) { rows.push({ date: curDate, time: curTime, gate: gate || pendingGate, amount: amt }); pendingGate = ''; }
     else if (gate && !amt) pendingGate = gate;          // 톨게이트와 금액이 줄이 나뉜 경우
   });
   if (!rows.length) {                                   // 한 건짜리 영수증: 문서 전체에서 한 번 더
     const s = text.replace(/\s+/g, ' ');
     const amt = (s.match(/(?:통행료|요금|금액)[^0-9]{0,8}([\d,]{3,7})/) || [])[1];
     if (amt) { const d = s.match(DATE_RE);
-      rows.push({ date: d ? `${d[1]}-${d[2].padStart(2, '0')}-${d[3].padStart(2, '0')}` : '', gate: gateIn_(s), amount: Number(amt.replace(/,/g, '')) }); }
+      rows.push({ date: d ? ymd_(d) : '', time: d ? timeAt_(s, d.index + d[0].length) : '', gate: gateIn_(s), amount: Number(amt.replace(/,/g, '')) }); }
   }
   return rows;
 }
