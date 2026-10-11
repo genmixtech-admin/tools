@@ -244,9 +244,9 @@ function renderTrips(){
     <td><input class="num" data-k="km" inputmode="decimal" value="${t.km??""}" aria-label="KM"></td>
     <td style="text-align:center"><input type="checkbox" data-k="rt" ${t.rt?"checked":""} aria-label="왕복" style="width:auto"></td>
     <td><input list="projList" data-k="proj" value="${esc(t.proj)}" aria-label="프로젝트명">
-      ${t.proj&&!ml.includes(t.proj)?'<span class="pill new">미등록</span>':""}${t.est?` <span class="pill ai" title="${esc(t.hit||"")}">네이버</span>`:""}${t.toll?` <span class="pill">예상통행료 ${won(t.toll)}</span>`:""}</td>
+      ${t.proj&&!ml.includes(t.proj)?'<span class="pill new">미등록</span>':""}${t.est?` <span class="pill ai" title="${esc((t.via?t.via+": ":"")+(t.hit||""))}">자동계산</span>`:""}${t.toll?` <span class="pill">예상통행료 ${won(t.toll)}</span>`:""}</td>
     <td class="sum">${won(tripKm(t))}</td>
-    <td><div class="row-actions"><button data-act="est" class="needs-ai" hidden title="네이버 지도로 도로거리 계산">거리</button><button data-act="del" aria-label="행 삭제">삭제</button></div></td>
+    <td><div class="row-actions"><button data-act="est" class="needs-ai" hidden title="출발지·도착지로 도로거리 계산">거리</button><button data-act="del" aria-label="행 삭제">삭제</button></div></td>
   </tr>`).join("");
   aiToggle();totals();
 }
@@ -352,12 +352,12 @@ async function estimate(rows,btn){
   btn&&(btn.disabled=true);const n=$("#tripNote");n.className="note";n.textContent=`네이버 경로 거리 계산 중… (${rows.length}건)`;
   const fails=[];
   for(const r of rows){
-    try{const j=await api({action:"distance",from:r.from,to:r.to});r.km=j.km;r.est=true;r.toll=j.toll;r.hit=`${j.fromLabel||r.from} → ${j.toLabel||r.to}`;}
+    try{const j=await api({action:"distance",from:r.from,to:r.to});r.km=j.km;r.est=true;r.toll=j.toll;r.hit=`${j.fromLabel||r.from} → ${j.toLabel||r.to}`;r.via=j.source||"";}
     catch(e){fails.push(`${r.from}→${r.to}: ${e.message}`)}
   }
   renderTrips();btn&&(btn.disabled=false);
   if(fails.length){n.className="note err";n.textContent=fails.join(" / ")}
-  else n.textContent="네이버 지도 최적경로(편도) 기준입니다. 경로 예상 통행료는 행에 표시됩니다.";
+  else n.textContent="추천 경로(편도) 기준 도로거리입니다. ‘자동계산’에 마우스를 올리면 찾은 장소와 사용한 지도를 볼 수 있습니다.";
 }
 $("#estAll").onclick=e=>estimate(S.trips.filter(t=>!(+t.km)),e.currentTarget);
 
