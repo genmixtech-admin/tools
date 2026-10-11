@@ -214,8 +214,8 @@ function sample0(){return{
   fuel:"gasoline",price:FUEL.gasoline.price,priceDate:"",gg:null,dep:700,eff:FUEL.gasoline.eff,
   master:"[예시] 스마트팩토리 구축\n[예시] QMS 인증 대응\n[예시] 신규 거래처 발굴",
   trips:[
-    {id:1,date:today(),from:"서울 본사",to:"평택 고객사",km:68,rt:true,proj:"[예시] 스마트팩토리 구축",est:false},
-    {id:2,date:today(),from:"서울 본사",to:"화성 협력사",km:52,rt:false,proj:"[예시] 협력사 감사",est:false}],
+    {id:1,date:today(),from:"서울 본사",to:"평택 고객사",km:"",rt:true,proj:"[예시] 스마트팩토리 구축",est:false},
+    {id:2,date:today(),from:"서울 본사",to:"화성 협력사",km:"",rt:false,proj:"[예시] 협력사 감사",est:false}],
   tolls:[{id:3,date:today(),gate:"[예시] 서울",route:"서울 본사 → 평택 고객사",amt:2900,src:"수기"}],
   mail:{to:"",cc:"",memo:""},
   seq:4};}
@@ -284,7 +284,13 @@ function bindTable(body,list,after){
     const row=S[list].find(r=>r.id==tr.dataset.id);row[k]=e.target.type==="checkbox"?e.target.checked:e.target.value;
     if(k==="km")row.est=false;
     if(list==="trips")tr.querySelector("td.sum").textContent=won(tripKm(row));totals();});
-  body.addEventListener("change",e=>{if(["proj","rt"].includes(e.target.dataset.k))after()});
+  body.addEventListener("change",e=>{const k=e.target.dataset.k;
+    if(list==="trips"&&(k==="from"||k==="to")){            // 출발·도착이 바뀌면 이전 KM은 맞지 않으므로 비움
+      const row=S.trips.find(r=>r.id==e.target.closest("tr").dataset.id);
+      if(row&&(+row.km||0)>0){row.km="";row.est=false;row.toll=0;row.hit="";after();
+        $("#tripNote").className="note";$("#tripNote").textContent="출발지·도착지가 바뀌어 KM를 비웠습니다. ‘거리’를 눌러 다시 계산하세요.";}
+      return;}
+    if(["proj","rt"].includes(k))after()});
   body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const tr=b.closest("tr"),id=+tr.dataset.id;
     if(b.dataset.act==="del"){S[list]=S[list].filter(r=>r.id!==id);after()}
     if(b.dataset.act==="est")estimate([S.trips.find(r=>r.id===id)],b)});
