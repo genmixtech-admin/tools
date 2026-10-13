@@ -1,8 +1,45 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>출장비 정산</title>
+<!doctype html>
+<!--
+================================================================================
+ 파일명 : travel-expense.html  (Obsidian 원본: 100_Intranet_경영정보/tools/출장비정산.html)
+ 목적   : 출장비 사용 내역 입력 → 개인별·카드별·구분별 소계 → 엑셀 내보내기·메일 발송
+ 버전   : v1.8 → v1.9
+ 작업일 : 2026-10-13
+ 이번 작업 요약 : 엑셀 불러오기(이어서 입력), 해외 출장 기본 항목 자동 생성, 화면·엑셀 버전 표시
+ 이전 버전 대비 변경 사항
+   [추가] '엑셀 불러오기' 버튼 — 이 도구로 내보낸 엑셀(v1.0~v1.9 형식)을 읽어 내역·출장 정보를 반영
+          · 기존 내역에 이어서 추가 / 기존 내역을 지우고 불러오기 중 선택
+          · 같은 내역(일시·이름·통화·현지화액·상호 동일)은 중복으로 보고 건너뜀
+          · 수식만 있고 값이 없는 칸(USD·원화 환산액)은 환율로 다시 계산
+   [추가] 출장 기본정보에 '출장 구분(해외/국내)' — 해외 선택 시 항공·숙박·해외교통·국내교통·통신·식음료
+          기본 항목을 '입력 필요' 상태로 자동 생성 (이미 있는 구분은 건너뜀), '기본 항목 만들기' 버튼
+   [추가] 화면 제목 옆·하단에 버전 표시, 엑셀 4행에 작성 도구 버전 기록
+   [수정] '입력 필요' 항목은 금액을 넣어 저장하기 전까지 합계·소계·엑셀·메일에서 제외
+   [수정] 메일 본문에 도구 버전 표기
+--------------------------------------------------------------------------------
+ 변경 이력 (Changelog, 최신순)
+   v1.9   2026-10-13  엑셀 불러오기, 해외 출장 기본 항목 자동 생성, 버전 표시
+   v1.8   2026-10-10  금액 계산을 현지화→USD→원화 2단계로 변경(양방향 자동 계산), 환수수료→환가료
+   v1.7   2026-10-10  정산 내역 행에 '복사' 추가
+   v1.6.1 2026-10-10  교통수단에 '렌트' 추가
+   v1.6   2026-10-10  구분별(대항목) 소계 — 교통수단 하위 소계, 비중, 엑셀 '구분별 소계' 시트
+   v1.5   2026-10-10  Apps Script(genmixtech.ai Gmail)로 엑셀 첨부 메일 자동 발송
+   v1.4   2026-10-10  받는 사람·참조 이메일(여러 명) 입력
+   v1.3.2 2026-10-10  반응형 화면(폭 제한 해제, 표 간격 축소·줄바꿈)
+   v1.3.1 2026-10-10  표기 '소유주' → '이름'
+   v1.3   2026-10-10  수정/삭제 버튼 왼쪽 이동, 체크박스 일괄 삭제
+   v1.2.3 2026-10-10  사용일시 날짜 + 24시간제 시/분 선택
+   v1.2.2 2026-10-10  사용일시 입력칸 확대
+   v1.2.1 2026-10-10  이전 교통비 내역 수정 오류 수정, 입력 오류 안내 강화
+   v1.2   2026-10-10  출장 기본정보, 환수수료, 상호, 교통 상세, 사용일시(분 단위)
+   v1.0   2026-10-10  첫 게시 (구분 항목, 개인별·카드별 소계, 엑셀 내보내기, 표 복사)
+================================================================================
+-->
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>출장비 정산</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* 출장비 정산 v1.8 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
+/* 출장비 정산 v1.9 — 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html */
 :root{
   --bg:#f3f4f6; --surface:#ffffff; --sunk:#eceef2; --line:#d9dce3; --fg:#1b2030; --muted:#5f667a;
   --accent:#1f4e79; --accent-fg:#ffffff; --accent-soft:#e3ecf5;
@@ -84,6 +121,13 @@ tfoot td{font-weight:700;background:var(--sunk);border-bottom:0}
 th.sel,td.sel{width:36px;text-align:center;padding-left:6px;padding-right:6px}
 td.sel input,th.sel input{width:16px;height:16px;cursor:pointer}
 tr.on{background:var(--accent-soft)}
+.ver{font:500 12px var(--f-mono);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px;vertical-align:middle;margin-left:8px}
+.pill.need{background:var(--corp-soft);color:var(--danger)}
+tr.draft td{color:var(--muted)}
+.foot-ver{color:var(--muted);font-size:12px;text-align:center}
+.imp-sum{font-size:13px;margin:0 0 10px}
+.imp-sum b{font-variant-numeric:tabular-nums}
+.imp-actions{display:flex;flex-wrap:wrap;gap:8px}
 #byCat tr.sub td{color:var(--muted);font-size:12px}
 #byCat tr.sub td:first-child{padding-left:22px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:20px;align-items:start}
@@ -97,11 +141,12 @@ textarea{font:12px var(--f-mono)}
 <div class="wrap">
   <header>
     <div>
-      <h1 id="pageTitle">출장비 정산</h1>
+      <h1><span id="pageTitle">출장비 정산</span><span class="ver" id="verBadge" title="도구 버전"></span></h1>
       <p class="sub">사용 내역을 입력하면 개인별·카드별 소계가 자동으로 계산됩니다.</p>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span class="status" id="syncStatus">불러오는 중…</span>
+      <button class="btn" id="importBtn" type="button">엑셀 불러오기</button><input type="file" id="importFile" accept=".xlsx,.xls" hidden>
       <button class="btn" id="copyBtn" type="button">표 복사</button>
       <button class="btn" id="exportBtn" type="button">엑셀 내보내기</button>
       <button class="btn primary" id="mailBtn" type="button">엑셀 첨부해 메일 보내기</button>
@@ -109,17 +154,30 @@ textarea{font:12px var(--f-mono)}
   </header>
 
   <section class="panel" id="mailDone" hidden style="border-left:4px solid var(--pers)"><div class="panel-head"><h2>메일을 발송했습니다</h2><button class="btn ghost" type="button" onclick="this.closest('section').hidden=true">닫기</button></div><p class="hint" style="font-size:13px" id="mailDoneMsg"></p></section>
+  <section class="panel" id="importPanel" hidden style="border-left:4px solid var(--accent)">
+    <div class="panel-head"><h2>엑셀 불러오기</h2><button class="btn ghost" id="impClose" type="button">닫기</button></div>
+    <p class="imp-sum" id="impSum"></p>
+    <div class="imp-actions">
+      <button class="btn primary" id="impAppend" type="button">기존 내역에 이어서 추가</button>
+      <button class="btn" id="impReplace" type="button">기존 내역 지우고 불러오기</button>
+      <button class="btn ghost" id="impCancel" type="button">취소</button>
+    </div>
+    <p class="hint" id="impHint"></p>
+  </section>
   <section class="panel" id="copyPanel" hidden><div class="panel-head"><h2>표 복사</h2><button class="btn ghost" id="copyClose" type="button">닫기</button></div><p class="hint">아래 내용이 선택되어 있습니다. Ctrl+C(Mac은 ⌘+C)로 복사한 뒤 엑셀 A1 칸에 붙여넣으세요.</p><textarea id="copyText" rows="6" readonly></textarea></section>
 
   <section class="panel info" aria-labelledby="infoTitle">
     <div class="panel-head"><h2 id="infoTitle">출장 기본정보</h2><span class="small">입력하면 자동 저장되며 엑셀 상단에 표시됩니다.</span></div>
     <div class="form">
       <div class="field wide"><label for="i-name">출장명</label><input id="i-name" placeholder="예: EuMW 2026 전시회 참가 및 고객 미팅"></div>
+      <div class="field"><label for="i-type">출장 구분</label><select id="i-type"><option value="">선택</option><option>해외</option><option>국내</option></select></div>
+      <div class="field"><label>&nbsp;</label><button class="btn" id="seedBtn" type="button" title="해외 출장 기본 항목(항공·숙박·해외교통·국내교통·통신·식음료)을 만듭니다">기본 항목 만들기</button></div>
       <div class="field"><label for="i-person">출장자</label><input id="i-person" placeholder="홍길동"></div>
       <div class="field"><label for="i-from">출장기간 (시작)</label><input type="date" id="i-from"></div>
       <div class="field"><label for="i-to">출장기간 (종료)</label><input type="date" id="i-to"></div>
       <div class="field wide"><label for="i-mailto">받는 사람 (정산 담당자 이메일)</label><input id="i-mailto" type="text" inputmode="email" placeholder="예: account@genmixtech.com, manager@genmixtech.com"></div>
       <div class="field wide"><label for="i-mailcc">참조 (CC, 선택)</label><input id="i-mailcc" type="text" inputmode="email" placeholder="예: 본인 이메일"></div>
+      <p class="hint">출장 구분을 '해외'로 고르면 항공·숙박·해외교통·국내교통·통신·식음료 기본 항목이 '입력 필요' 상태로 만들어집니다(이미 있는 구분은 건너뜀). 각 행의 '입력'을 눌러 금액을 채우세요. 금액을 넣기 전에는 합계와 엑셀에 포함되지 않습니다.</p>
       <p class="hint">이메일은 여러 개를 쉼표(,)나 세미콜론(;)으로 구분해 입력하세요. 입력한 주소는 이 브라우저에 저장되어 다음에도 그대로 쓰입니다.</p>
     </div>
   </section>
@@ -212,12 +270,14 @@ textarea{font:12px var(--f-mono)}
       <div class="tbl-wrap"><table><thead><tr><th>카드</th><th>이름</th><th>구분</th><th class="n">건수</th><th>현지화 합계</th><th class="n">합계 (원)</th></tr></thead><tbody id="byCard"></tbody></table></div>
     </section>
   </div>
+  <p class="foot-ver" id="footVer"></p>
 </div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
+const APP_VERSION='v1.9', APP_DATE='2026-10-13';
 const $=s=>document.querySelector(s);
 const fmtKRW=n=>Math.round(n||0).toLocaleString('ko-KR');
 const fmtLocal=(n,c)=>Number(n).toLocaleString('ko-KR',{minimumFractionDigits:(c==='KRW'||c==='JPY'||c==='VND')?0:2,maximumFractionDigits:2});
@@ -229,7 +289,7 @@ const perOf=c=>c==='JPY'?100:1;
 const fmtDT=d=>String(d||'').replace('T',' ');
 const dayOf=d=>String(d||'').slice(0,10);
 
-let items=[], info={name:'',person:'',from:'',to:'',mailto:'',mailcc:''};
+let items=[], info={name:'',type:'',person:'',from:'',to:'',mailto:'',mailcc:''};
 let editingId=null, pendingDelete=null; const selected=new Set();
 const LS='travel-expense-local', LSI='travel-expense-info';
 
@@ -245,7 +305,7 @@ function normalize(r){
 }
 
 /* ---------- 출장 기본정보 ---------- */
-const infoMap={name:'#i-name',person:'#i-person',from:'#i-from',to:'#i-to',mailto:'#i-mailto',mailcc:'#i-mailcc'};
+const infoMap={name:'#i-name',type:'#i-type',person:'#i-person',from:'#i-from',to:'#i-to',mailto:'#i-mailto',mailcc:'#i-mailcc'};
 function renderInfo(){for(const k in infoMap)$(infoMap[k]).value=info[k]||'';updateTitle()}
 function updateTitle(){$('#pageTitle').textContent=info.name?`출장비 정산 · ${info.name}`:'출장비 정산'}
 for(const k in infoMap){
@@ -255,11 +315,28 @@ for(const k in infoMap){
   });
 }
 $('#f-owner').addEventListener('input',()=>{$('#f-owner').dataset.touched='1'});
+$('#i-type').addEventListener('change',e=>{info.type=e.target.value;save(LSI,info);if(info.type==='해외')seedDefaults(true)});
+$('#seedBtn').addEventListener('click',()=>seedDefaults(false));
+
+/* ---------- 해외 출장 기본 항목 (v1.9) ---------- */
+const SEED=[['항공','KRW'],['숙박','USD'],['해외교통','USD'],['국내교통','KRW'],['통신','KRW'],['식음료','USD']];
+function seedDefaults(auto){
+  const have=new Set(items.map(r=>r.cat||'기타'));
+  const add=SEED.filter(([c])=>!have.has(c));
+  if(!add.length){if(!auto)toast('기본 항목이 이미 모두 있습니다');return}
+  const d=(info.from||nowLocal().slice(0,10))+'T09:00', t=Date.now();
+  add.forEach(([cat,cur],i)=>items.push({id:'l'+(t+i).toString(36),draft:true,date:d,owner:info.person||'',method:'카드',kind:'법인',card4:'',cat,shop:'',
+    tmode:'',tfrom:'',tto:'',currency:cur,local:0,fx1:null,usd:null,fx2:null,rate:null,base:0,fee:0,krw:0,memo:'기본 항목 · 금액 입력 필요'}));
+  save(LS,items); render();
+  toast(`기본 항목 ${add.length}개(${add.map(a=>a[0]).join('·')})를 만들었습니다. 각 행의 '입력'을 눌러 금액을 채우세요`);
+}
 
 function init(){
   items=load(LS,[]).map(normalize); info=Object.assign(info,load(LSI,{}));
   let ok=false; try{localStorage.setItem('__t','1');localStorage.removeItem('__t');ok=true}catch(e){}
   $('#syncStatus').textContent= ok?'이 브라우저에만 저장됩니다':'임시 입력 모드 · 새로고침하면 사라지니 엑셀로 내보내 보관하세요';
+  $('#verBadge').textContent=APP_VERSION; document.title=`출장비 정산 ${APP_VERSION}`;
+  $('#footVer').textContent=`출장비 정산 ${APP_VERSION} (${APP_DATE}) · 원본: Obsidian 100_Intranet_경영정보/tools/출장비정산.html · 관리: genmixtech.ai@gmail.com`;
   renderInfo(); if(info.person)$('#f-owner').value=info.person;
   resetForm(false); render();
 }
@@ -346,12 +423,12 @@ function doSubmit(){
   if(!rec.date)miss.push('사용일시'); if(!rec.owner)miss.push('이름');
   if(rec.method==='카드'&&!/^\d{4}$/.test(rec.card4))miss.push('카드번호 4자리');
   // 교통수단은 새로 입력할 때만 필수 (v1.1 이전 내역 수정은 비워 둬도 저장)
-  const legacy=editingId&&!(items.find(x=>x.id===editingId)||{}).tmode;
+  const cur0=items.find(x=>x.id===editingId)||{}, legacy=editingId&&!cur0.tmode&&!cur0.draft;
   if(t&&!rec.tmode&&!legacy)miss.push('교통수단');
   if(!isFinite(rec.local))miss.push('현지화액'); if(!isFinite(rec.base))miss.push('원화 환산액 (USD→원 환율 또는 원화 환산액 입력)');
   if(miss.length){const m=`${miss.join(', ')} 항목을 확인해 주세요.`;err.textContent=m;err.hidden=false;toast(m);err.scrollIntoView({behavior:'smooth',block:'center'});return}
-  const wasEdit=!!editingId;
-  upsert(rec); toast(wasEdit?'수정했습니다':'추가했습니다');
+  const wasEdit=!!editingId, wasDraft=!!cur0.draft;
+  upsert(rec); toast(wasDraft?'입력했습니다':wasEdit?'수정했습니다':'추가했습니다');
   if(wasEdit){document.querySelector('input[name=method][value="카드"]').checked=true;document.querySelector('input[name=kind][value="법인"]').checked=true}
   resetForm(true);
 }
@@ -377,10 +454,11 @@ function startEdit(id,copy){
   $('#t-mode').value=r.tmode||''; $('#t-from').value=r.tfrom||''; $('#t-to').value=r.tto||'';
   $('#f-cur').value=r.currency; syncMethod(); syncCat(); syncCur();
   $('#f-card').value=r.card4||'';
-  $('#f-local').value=r.local; syncUsdEnabled();
+  $('#f-local').value=r.draft?'':r.local; syncUsdEnabled();
   $('#f-fx1').value=r.currency==='USD'?'1':(r.fx1!=null?fmtFx(r.fx1):''); $('#f-usd').value=r.usd!=null?fmtUSD(r.usd):''; $('#f-fx2').value=r.fx2!=null?fmtFx(r.fx2):'';
-  $('#f-base').value=fmtKRW(r.base); $('#f-fee').value=r.fee||''; lastKrwInput=r.fx2!=null?'fx2':'base'; calcTotal(); $('#f-memo').value=r.memo||'';
-  $('#submitBtn').textContent=copy?'복사본 추가':'수정 저장'; $('#cancelEdit').textContent=copy?'복사 취소':'수정 취소'; $('#cancelEdit').hidden=false;
+  $('#f-base').value=r.draft?'':fmtKRW(r.base); $('#f-fee').value=r.fee||''; lastKrwInput=r.fx2!=null?'fx2':'base'; calcTotal(); $('#f-memo').value=r.memo||'';
+  if(r.draft&&!copy&&r.memo==='기본 항목 · 금액 입력 필요')$('#f-memo').value='';
+  $('#submitBtn').textContent=copy?'복사본 추가':r.draft?'입력 저장':'수정 저장'; $('#cancelEdit').textContent=copy?'복사 취소':'수정 취소'; $('#cancelEdit').hidden=false;
   if(copy)toast('내용을 복사했습니다. 날짜·금액 등을 고친 뒤 \'복사본 추가\'를 누르세요');
   $('#form').scrollIntoView({behavior:'smooth',block:'start'}); $('#f-date').focus({preventScroll:true});
 }
@@ -392,6 +470,7 @@ function filtered(){
   return items.filter(r=>(!o||r.owner===o)&&(!k||r.kind===k)&&(!g||(r.cat||'기타')===g)&&(!f||dayOf(r.date)>=f)&&(!t||dayOf(r.date)<=t))
     .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
 }
+const real=list=>list.filter(r=>!r.draft);
 const CATS=['해외교통','국내교통','통신','항공','숙박','식음료','기타'];
 function aggregateCat(list){
   const m=new Map();
@@ -426,7 +505,7 @@ function render(){
   $('#cardList').innerHTML=[...new Set(items.filter(r=>r.card4).map(r=>r.card4))].map(c=>`<option value="${c}">`).join('');
   $('#shopList').innerHTML=[...new Set(items.filter(r=>r.shop).map(r=>r.shop))].map(c=>`<option value="${esc(c)}">`).join('');
 
-  const list=filtered(), ag=aggregate(list);
+  const all=filtered(), list=real(all), ag=aggregate(list), drafts=all.length-list.length;
   const sum=list.reduce((s,r)=>s+r.krw,0), corp=list.filter(r=>r.kind==='법인').reduce((s,r)=>s+r.krw,0);
   const feeSum=list.reduce((s,r)=>s+(r.fee||0),0), baseSum=list.reduce((s,r)=>s+(r.base||0),0);
   $('#totals').innerHTML=`
@@ -434,26 +513,27 @@ function render(){
     <div><span class="lbl">법인</span><span class="big">₩${fmtKRW(corp)}</span></div>
     <div><span class="lbl">개인</span><span class="big">₩${fmtKRW(sum-corp)}</span></div>
     <div><span class="lbl">환가료 합계</span><span class="big">₩${fmtKRW(feeSum)}</span></div>
-    <div><span class="lbl">건수</span><span class="big">${list.length}</span></div>`;
+    <div><span class="lbl">건수</span><span class="big">${list.length}${drafts?`<span class="small"> + 입력 필요 ${drafts}</span>`:''}</span></div>`;
 
   const tb=$('#rows');
-  if(!list.length){
+  if(!all.length){
     tb.innerHTML=`<tr><td colspan="19" class="empty">${items.length?'조건에 맞는 내역이 없습니다.':'아직 입력된 내역이 없습니다. 위 양식에서 첫 사용 내역을 추가해 보세요.'}</td></tr>`;
     $('#foot').innerHTML='';
   }else{
-    tb.innerHTML=list.map(r=>`<tr${selected.has(r.id)?' class="on"':''}>
+    tb.innerHTML=all.map(r=>`<tr class="${selected.has(r.id)?'on':''}${r.draft?' draft':''}">
       <td class="sel"><input type="checkbox" data-sel="${r.id}"${selected.has(r.id)?' checked':''} aria-label="선택"></td>
       <td>${pendingDelete===r.id
         ?`<span class="confirm">삭제할까요? <button class="btn ghost danger" data-del="${r.id}">삭제</button><button class="btn ghost" data-nodel>취소</button></span>`
+        :r.draft?`<button class="btn ghost" data-edit="${r.id}" style="color:var(--accent);font-weight:600">입력</button><button class="btn ghost danger" data-ask="${r.id}">삭제</button>`
         :`<button class="btn ghost" data-edit="${r.id}">수정</button><button class="btn ghost" data-copy="${r.id}">복사</button><button class="btn ghost danger" data-ask="${r.id}">삭제</button>`}</td>
       <td class="mono">${esc(fmtDT(r.date))}</td><td>${esc(r.owner)}</td>
       <td><span class="pill ${r.kind==='법인'?'corp':'pers'}">${esc(r.kind)}</span></td>
       <td>${esc(r.method)}</td><td class="mono">${r.card4?'**** '+esc(r.card4):'—'}</td>
-      <td>${esc(r.cat||'기타')}</td><td class="wr">${esc(r.shop||'')}</td><td class="small wr">${esc(transStr(r))}</td>
-      <td class="n">${fmtLocal(r.local,r.currency)}</td><td class="mono">${esc(r.currency)}</td>
+      <td>${esc(r.cat||'기타')}${r.draft?' <span class="pill need">입력 필요</span>':''}</td><td class="wr">${esc(r.shop||'')}</td><td class="small wr">${esc(transStr(r))}</td>
+      <td class="n">${r.draft?'':fmtLocal(r.local,r.currency)}</td><td class="mono">${esc(r.currency)}</td>
       <td class="n">${r.fx1!=null?fmtFx(r.fx1):''}</td><td class="n">${r.usd!=null?fmtUSD(r.usd):''}</td><td class="n">${r.fx2!=null?fmtFx(r.fx2):(r.rate!=null?'<span class="small" title="이전 방식: 현지화→원 직접 환율">'+fmtFx(r.rate)+'*</span>':'')}</td>
-      <td class="n">${fmtKRW(r.base)}</td><td class="n">${r.fee?fmtKRW(r.fee):''}</td>
-      <td class="n"><b>${fmtKRW(r.krw)}</b></td><td class="memo wr" title="${esc(r.memo)}">${esc(r.memo)||''}</td></tr>`).join('');
+      <td class="n">${r.draft?'':fmtKRW(r.base)}</td><td class="n">${r.fee?fmtKRW(r.fee):''}</td>
+      <td class="n"><b>${r.draft?'':fmtKRW(r.krw)}</b></td><td class="memo wr" title="${esc(r.memo)}">${esc(r.memo)||''}</td></tr>`).join('');
     $('#foot').innerHTML=`<tr><td colspan="13">합계</td><td class="n">${fmtUSD(list.reduce((s,r)=>s+(r.usd||0),0))}</td><td></td><td class="n">${fmtKRW(baseSum)}</td><td class="n">${fmtKRW(feeSum)}</td><td class="n">${fmtKRW(sum)}</td><td></td></tr>`;
   }
 
@@ -469,7 +549,7 @@ function render(){
       +[...c.subs.values()].map(x=>`<tr class="sub"><td>└ ${esc(x.cat)}</td><td class="n">${x.n}</td><td class="n">${fmtKRW(x.corp)}</td><td class="n">${fmtKRW(x.pers)}</td><td class="n">${fmtKRW(x.total)}</td><td class="n">${pct(x.total)}</td><td></td></tr>`).join('')).join('')
     +`<tr><td><b>합계</b></td><td class="n"><b>${list.length}</b></td><td class="n"><b>${fmtKRW(corp)}</b></td><td class="n"><b>${fmtKRW(sum-corp)}</b></td><td class="n"><b>${fmtKRW(sum)}</b></td><td class="n">100%</td><td></td></tr>`
     :`<tr><td colspan="7" class="empty">내역이 추가되면 표시됩니다.</td></tr>`;
-  syncSel(list);
+  syncSel(all);
 }
 /* ---------- 선택 & 일괄 삭제 ---------- */
 function syncSel(list){
@@ -498,14 +578,14 @@ $('#rows').addEventListener('click',e=>{
 const HEAD=['사용일시','이름','개인/법인','현금/카드','카드번호(끝4자리)','구분','상호','교통수단','출발지','목적지','통화','현지화액','환율(현지화→USD)','USD 환산액','환율(USD→원)','원화 환산액(원)','환가료(원)','원화 합계(원)','내역'];
 const rowOf=r=>[fmtDT(r.date),r.owner,r.kind,r.method,r.card4||'',r.cat||'기타',r.shop||'',r.tmode||'',r.tfrom||'',r.tto||'',r.currency,r.local,r.fx1??'',r.usd??'',r.fx2??'',r.base,r.fee||0,r.krw,r.memo||''];
 const periodStr=()=>info.from||info.to?`${info.from||''} ~ ${info.to||''}`:'';
-const infoRows=()=>[['출장명',info.name||''],['출장자',info.person||''],['출장기간',periodStr()]];
+const infoRows=()=>[['출장명',info.name||''],['출장자',info.person||'','','','','','','출장 구분',info.type||''],['출장기간',periodStr()]];
 
 function buildWb(){
   if(typeof XLSX==='undefined'){toast('엑셀 모듈을 불러오지 못했습니다. \'표 복사\'를 이용하세요');return null}
-  const list=filtered(); if(!list.length){toast('내보낼 내역이 없습니다');return null}
+  const list=real(filtered()); if(!list.length){toast('내보낼 내역이 없습니다');return null}
   const ag=aggregate(list), wb=XLSX.utils.book_new();
   const HR=5, first=HR+1, n=list.length, last=HR+n; // 머리글 5행, 데이터 6행부터
-  const ws1=XLSX.utils.aoa_to_sheet([...infoRows(),[],HEAD]);
+  const ws1=XLSX.utils.aoa_to_sheet([...infoRows(),[`작성 도구: 출장비 정산 ${APP_VERSION}`],HEAD]);
   list.forEach((r,i)=>{
     const row=first+i, v=rowOf(r);
     // 환산액: 환율로 계산된 값이면 수식, 아니면 입력값
@@ -542,6 +622,8 @@ function buildWb(){
   const safe=s=>String(s||'').replace(/[\\/:*?"<>|]/g,'').trim().slice(0,40);
   const d=new Date(),ymd=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
   const fname=['출장비정산',safe(info.name),safe(info.person),ymd].filter(Boolean).join('_')+'.xlsx';
+  wb.Props={Title:'출장비 정산',Subject:info.name||'',Author:info.person||'',Comments:`출장비 정산 ${APP_VERSION}`};
+  const nd=filtered().length-list.length; if(nd)toast(`'입력 필요' ${nd}건은 제외했습니다`);
   return {wb,fname};
 }
 function exportXlsx(){const r=buildWb();if(!r)return null;try{XLSX.writeFile(r.wb,r.fname);toast('엑셀 파일을 내려받았습니다');return r.fname}catch(x){toast('파일 저장이 막혀 있습니다. \'표 복사\'를 이용하세요');return null}}
@@ -560,14 +642,14 @@ $('#mailBtn').addEventListener('click',async()=>{
   if(bad.length){toast(`이메일 형식을 확인해 주세요: ${bad.join(', ')}`);$('#i-mailto').focus();return}
   if(!MAIL_ENDPOINT){toast('메일 발송 설정이 아직 완료되지 않았습니다. 관리자에게 문의하세요');return}
   const r=buildWb(); if(!r)return;
-  const list=filtered(), sum=list.reduce((s,x)=>s+x.krw,0), corp=list.filter(x=>x.kind==='법인').reduce((s,x)=>s+x.krw,0), fee=list.reduce((s,x)=>s+(x.fee||0),0);
+  const list=real(filtered()), sum=list.reduce((s,x)=>s+x.krw,0), corp=list.filter(x=>x.kind==='법인').reduce((s,x)=>s+x.krw,0), fee=list.reduce((s,x)=>s+(x.fee||0),0);
   const period=periodStr(), who=info.person||'';
   const subject=`[출장비 정산] ${info.name||'출장'}${who?' - '+who:''}${period?` (${period})`:''}`;
   const body=['안녕하세요.','','출장비 정산 내역을 첨부와 같이 보내드립니다.','',
     `- 출장명: ${info.name||''}`,`- 출장자: ${who}`,`- 출장기간: ${period}`,
     `- 총 원화액: ${fmtKRW(sum)}원 (법인 ${fmtKRW(corp)}원 / 개인 ${fmtKRW(sum-corp)}원)`,
     `- 환가료 합계: ${fmtKRW(fee)}원`,`- 건수: ${list.length}건`,'',
-    `첨부: ${r.fname}`,'','감사합니다.','','※ 출장비 정산 시스템에서 genmixtech.ai@gmail.com 계정으로 자동 발송된 메일입니다. 회신은 참조(CC)된 출장자에게 전달됩니다.'].join('\n');
+    `첨부: ${r.fname}`,'','감사합니다.','',`※ 출장비 정산 시스템(${APP_VERSION})에서 genmixtech.ai@gmail.com 계정으로 자동 발송된 메일입니다. 회신은 참조(CC)된 출장자에게 전달됩니다.`].join('\n');
   const btn=$('#mailBtn'), label=btn.textContent; sending=true; btn.disabled=true; btn.textContent='발송 중…';
   try{
     const file=XLSX.write(r.wb,{type:'base64',bookType:'xlsx'});
@@ -580,7 +662,7 @@ $('#mailBtn').addEventListener('click',async()=>{
 });
 
 $('#copyBtn').addEventListener('click',async()=>{
-  const list=filtered(); if(!list.length){toast('복사할 내역이 없습니다');return}
+  const list=real(filtered()); if(!list.length){toast('복사할 내역이 없습니다');return}
   const clean=v=>String(v??'').replace(/[\t\n]/g,' ');
   const tsv=[...infoRows(),[],HEAD,...list.map(rowOf)].map(row=>row.map(clean).join('\t')).join('\n');
   const ta=$('#copyText'); ta.value=tsv; $('#copyPanel').hidden=false; ta.focus(); ta.select();
@@ -588,6 +670,103 @@ $('#copyBtn').addEventListener('click',async()=>{
   catch(e){try{if(document.execCommand('copy'))toast('복사했습니다. 엑셀에 붙여넣으세요')}catch(x){}}
 });
 $('#copyClose').addEventListener('click',()=>{$('#copyPanel').hidden=true});
+
+/* ---------- 엑셀 불러오기 (v1.9) ----------
+   이 도구가 내보낸 '정산내역' 시트를 읽음. 머리글 행('사용일시' 또는 '사용일')을 찾아 열 이름으로 매핑하므로
+   v1.0(사용일·소유주·적용환율·원화액) ~ v1.9 형식을 모두 읽을 수 있음. */
+const COLS={date:['사용일시','사용일'],owner:['이름','소유주'],kind:['개인/법인'],method:['현금/카드'],card4:['카드번호(끝4자리)','카드번호'],
+  cat:['구분'],shop:['상호'],tmode:['교통수단'],tfrom:['출발지'],tto:['목적지'],currency:['통화'],local:['현지화액'],
+  fx1:['환율(현지화→USD)'],usd:['USD환산액'],fx2:['환율(USD→원)'],rate:['적용환율'],
+  base:['원화환산액(원)','환산액(원)'],fee:['환가료(원)','환수수료(원)'],krw:['원화합계(원)','원화액합계(원)','원화액'],memo:['내역']};
+const key=v=>String(v??'').replace(/\s/g,'');
+const pad2=n=>String(n).padStart(2,'0');
+function cellDT(v){
+  if(v instanceof Date&&!isNaN(v))return `${v.getFullYear()}-${pad2(v.getMonth()+1)}-${pad2(v.getDate())}T${pad2(v.getHours())}:${pad2(v.getMinutes())}`;
+  if(typeof v==='number'&&v>20000&&v<80000){const ms=Math.round((v-25569)*864e5),d=new Date(ms);return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`}
+  const m=String(v??'').trim().match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?:[ T]+(\d{1,2}):(\d{2}))?/);
+  return m?`${m[1]}-${pad2(m[2])}-${pad2(m[3])}T${pad2(m[4]||0)}:${m[5]||'00'}`:'';
+}
+const cellDay=v=>cellDT(v).slice(0,10);
+const numOrNull=v=>{const n=num(v);return isFinite(n)?n:null};
+function parseBook(wb){
+  const ws=wb.Sheets['정산내역']||wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  const hi=rows.findIndex(r=>r.some(c=>['사용일시','사용일'].includes(key(c))));
+  if(hi<0)throw new Error('이 도구로 내보낸 엑셀이 아닙니다. (\'사용일시\' 머리글을 찾지 못했습니다)');
+  const head=rows[hi].map(key), col={};
+  for(const f in COLS){const i=head.findIndex(h=>COLS[f].includes(h));if(i>=0)col[f]=i}
+  const g=(r,f)=>col[f]==null?'':r[col[f]];
+  // 출장 정보 (머리글 위쪽 행)
+  const fi={}; rows.slice(0,hi).forEach(r=>{
+    for(let i=0;i<r.length-1;i++){const k=key(r[i]),v=r[i+1];
+      if(k==='출장명')fi.name=String(v||'').trim(); else if(k==='출장자')fi.person=String(v||'').trim();
+      else if(k==='출장구분')fi.type=String(v||'').trim();
+      else if(k==='출장기간'){const [a,b]=String(v||'').split('~');fi.from=cellDay(a);fi.to=cellDay(b)}}
+    const vm=String(r[0]||'').match(/출장비 정산 (v[\d.]+)/); if(vm)fi.ver=vm[1];
+  });
+  const out=[], bad=[];
+  rows.slice(hi+1).forEach((r,i)=>{
+    const first=key(r[0]); if(first==='합계'||r.every(c=>c===''||c==null))return;
+    const date=cellDT(g(r,'date')), local=num(g(r,'local'));
+    if(!date||!isFinite(local)){bad.push(hi+i+2);return}
+    const currency=String(g(r,'currency')||'KRW').trim().toUpperCase(), isK=currency==='KRW';
+    let fx1=numOrNull(g(r,'fx1')), usd=numOrNull(g(r,'usd')), fx2=numOrNull(g(r,'fx2')), rate=numOrNull(g(r,'rate'));
+    let base=numOrNull(g(r,'base')), fee=numOrNull(g(r,'fee'))||0, krw=numOrNull(g(r,'krw'));
+    if(currency==='USD'&&fx1==null)fx1=1;
+    if(usd==null&&fx1!=null&&!isK)usd=r2(local*fx1);          // 수식만 있고 값이 없는 칸 보정
+    if(base==null){
+      if(isK)base=local; else if(usd!=null&&fx2!=null)base=usd*fx2;
+      else if(rate!=null)base=local*rate/perOf(currency); else if(krw!=null)base=krw-fee;
+    }
+    if(base==null){bad.push(hi+i+2);return}
+    base=Math.round(base); fee=Math.round(fee);
+    const card=String(g(r,'card4')??'').replace(/\D/g,''), method=String(g(r,'method')||'').trim()==='현금'?'현금':'카드';
+    const cat=String(g(r,'cat')||'기타').trim();
+    out.push({date,owner:String(g(r,'owner')||'').trim(),method,kind:String(g(r,'kind')||'').trim()==='개인'?'개인':'법인',
+      card4:method==='카드'&&card?card.slice(-4).padStart(4,'0'):'',cat,shop:String(g(r,'shop')||'').trim(),
+      tmode:isTrans(cat)?String(g(r,'tmode')||'').trim():'',tfrom:isTrans(cat)?String(g(r,'tfrom')||'').trim():'',tto:isTrans(cat)?String(g(r,'tto')||'').trim():'',
+      currency,local,fx1:isK?null:fx1,usd:isK?null:usd,fx2:isK?null:fx2,rate:isK||fx2!=null?null:rate,base,fee,krw:base+fee,memo:String(g(r,'memo')||'').trim()});
+  });
+  return {info:fi,recs:out,bad};
+}
+const sig=r=>[dayOf(r.date)+String(r.date).slice(10,16),r.owner,r.currency,Number(r.local).toFixed(2),r.shop||'',r.cat||''].join('|');
+let pendingImport=null;
+$('#importBtn').addEventListener('click',()=>{if(typeof XLSX==='undefined'){toast('엑셀 모듈을 불러오지 못했습니다');return}$('#importFile').value='';$('#importFile').click()});
+$('#importFile').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f)return;
+  try{
+    const wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true});
+    const p=parseBook(wb); if(!p.recs.length)throw new Error('불러올 내역이 없습니다.');
+    const have=new Set(real(items).map(sig)), fresh=p.recs.filter(r=>!have.has(sig(r))), dup=p.recs.length-fresh.length;
+    pendingImport={...p,fresh,name:f.name};
+    const fi=p.info, sum=p.recs.reduce((s,r)=>s+r.krw,0);
+    $('#impSum').innerHTML=`<b>${esc(f.name)}</b>${fi.ver?` (${esc(fi.ver)}에서 작성)`:''} — 내역 <b>${p.recs.length}</b>건, 원화 합계 <b>₩${fmtKRW(sum)}</b>`
+      +(fi.name?`<br>출장명: ${esc(fi.name)}`:'')+(fi.person?` · 출장자: ${esc(fi.person)}`:'')+(fi.from||fi.to?` · 기간: ${esc(fi.from||'')} ~ ${esc(fi.to||'')}`:'')
+      +(dup?`<br>지금 화면에 이미 있는 같은 내역 ${dup}건은 '이어서 추가' 시 건너뜁니다.`:'')
+      +(p.bad.length?`<br>날짜·금액을 읽지 못한 행 ${p.bad.length}개는 제외합니다 (엑셀 ${p.bad.slice(0,8).join(', ')}행${p.bad.length>8?' 외':''}).`:'');
+    const hasItems=items.length>0;
+    $('#impAppend').textContent=hasItems?`기존 내역에 이어서 추가 (${fresh.length}건)`:`불러오기 (${p.recs.length}건)`;
+    $('#impReplace').hidden=!hasItems; $('#impAppend').disabled=hasItems&&!fresh.length;
+    $('#impHint').textContent=hasItems?`지금 화면에 ${items.length}건이 있습니다. '지우고 불러오기'는 현재 내역과 출장 정보를 파일 내용으로 바꿉니다(받는 사람·참조 이메일은 유지). 필요하면 먼저 '엑셀 내보내기'로 보관하세요.`:'불러온 뒤 이어서 새 내역을 입력하면 됩니다.';
+    $('#importPanel').hidden=false; $('#importPanel').scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(x){toast(x.message||'파일을 읽지 못했습니다');pendingImport=null}
+});
+function applyImport(replace){
+  const p=pendingImport; if(!p)return;
+  const t=Date.now(), recs=replace||!items.length?p.recs:p.fresh;
+  if(replace){items=[];selected.clear();resetForm(false)}
+  recs.forEach((r,i)=>items.push({id:'l'+(t+i).toString(36),...r}));
+  const fi=p.info;
+  ['name','type','person','from','to'].forEach(k=>{if(replace)info[k]=fi[k]||'';else if(fi[k]&&!info[k])info[k]=fi[k]});
+  save(LS,items); save(LSI,info); renderInfo();
+  if(info.person&&!editingId)$('#f-owner').value=info.person;
+  pendingImport=null; $('#importPanel').hidden=true; render();
+  toast(`${recs.length}건을 불러왔습니다. 이어서 입력하세요`);
+  $('#form').scrollIntoView({behavior:'smooth',block:'start'});
+}
+$('#impAppend').addEventListener('click',()=>applyImport(false));
+$('#impReplace').addEventListener('click',()=>applyImport(true));
+['#impCancel','#impClose'].forEach(s=>$(s).addEventListener('click',()=>{pendingImport=null;$('#importPanel').hidden=true}));
 
 init();
 })();
